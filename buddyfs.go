@@ -1,85 +1,82 @@
-package main
+package gobuddyfs
 
 import (
-  "flag"
-  "fmt"
-  "log"
-  "os"
+	"encoding/json"
+	"os"
 
-  "bazil.org/fuse"
-  "bazil.org/fuse/fs"
+	"bazil.org/fuse"
+	"bazil.org/fuse/fs"
+	"github.com/golang/glog"
 )
 
-var Usage = func() {
-  fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
-  fmt.Fprintf(os.Stderr, "  %s MOUNTPOINT\n", os.Args[0])
-  flag.PrintDefaults()
+// BuddyFS implements the Buddy file system.
+type BuddyFS struct {
+	Store KVStore
+
+	fs.FS
 }
 
-func main() {
-  flag.Usage = Usage
-  flag.Parse()
+func (self BuddyFS) Root() (fs.Node, fuse.Error) {
+	// Switch to mapping ROOT -> rootNodeKey
+	// Read encoded root node with key rootNodeKey
+	rootEncoded, err := self.Store.Get("ROOT")
+	if err != nil {
+		root := Dir{}
+		rootEncoded, err = json.Marshal(root)
+		if err == nil {
+			err = self.Store.Set("ROOT", rootEncoded)
+			if err == nil {
+				return root, nil
+			} else {
+				glog.Error(err)
+				return nil, fuse.ENODATA
+			}
+		} else {
+			glog.Error(err)
+			return nil, fuse.ENODATA
+		}
+	}
 
-  if flag.NArg() != 1 {
-    Usage()
-    os.Exit(2)
-  }
-  mountpoint := flag.Arg(0)
+	var root Dir
+	err = json.Unmarshal(rootEncoded, root)
 
-  c, err := fuse.Mount(mountpoint)
-  if err != nil {
-    log.Fatal(err)
-  }
-  defer c.Close()
+	if err != nil {
+		return nil, fuse.ENODATA
+	}
 
-  err = fs.Serve(c, FS{})
-  if err != nil {
-    log.Fatal(err)
-  }
-
-  // check if the mount process has an error to report
-  <-c.Ready
-  if err := c.MountError; err != nil {
-    log.Fatal(err)
-  }
-}
-
-// FS implements the hello world file system.
-type FS struct{}
-
-func (FS) Root() (fs.Node, fuse.Error) {
-  return Dir{}, nil
+	return root, nil
 }
 
 // Dir implements both Node and Handle for the root directory.
-type Dir struct{}
+type Dir struct {
+}
 
 func (Dir) Attr() fuse.Attr {
-  return fuse.Attr{Inode: 1, Mode: os.ModeDir | 0555}
+	return fuse.Attr{Inode: 1, Mode: os.ModeDir | 0555}
 }
 
 func (Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
-  if name == "hello" {
-    return File{}, nil
-  }
-  return nil, fuse.ENOENT
+	if name == "hello" {
+		return File{}, nil
+	}
+	return nil, fuse.ENOENT
 }
 
 var dirDirs = []fuse.Dirent{
-  {Inode: 2, Name: "hello", Type: fuse.DT_File},
+	{Inode: 2, Name: "hello", Type: fuse.DT_File},
 }
 
 func (Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
-  return dirDirs, nil
+	return dirDirs, nil
 }
 
 // File implements both Node and Handle for the hello file.
 type File struct{}
 
 func (File) Attr() fuse.Attr {
-  return fuse.Attr{Inode: 2, Mode: 0444}
+	return fuse.Attr{Inode: 2, Mode: 0444}
 }
 
 func (File) ReadAll(intr fs.Intr) ([]byte, fuse.Error) {
-  return []byte("hello, world\n"), nil
+	return []byte("hello, world\n"), nil
 }
