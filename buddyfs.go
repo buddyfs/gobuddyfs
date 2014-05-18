@@ -48,7 +48,7 @@ func (self BuddyFS) Root() (fs.Node, fuse.Error) {
 	var root Dir
 	var n int
 	root.Block.Id, n = binary.Varint(rootKey)
-	if n < 0 {
+	if n <= 0 {
 		glog.Errorf("Error while decoding root key")
 		return nil, fuse.ENODATA
 	}
@@ -66,7 +66,7 @@ type Block struct {
 	name string
 	// TODO: Can inode number be used as Id?
 	Id    int64
-	inode uint64
+	Inode uint64
 }
 
 func (b *Block) Write(store KVStore) error {
@@ -105,11 +105,11 @@ type Dir struct {
 // so that the appropriate inode ID can be set.
 func NewDir(name string) *Dir {
 	// FIXME: Change inode 1 below
-	return &Dir{Block: Block{name: name, inode: 1, Id: rand.Int63()}}
+	return &Dir{Block: Block{name: name, Inode: 1, Id: rand.Int63()}}
 }
 
 func (self Dir) Attr() fuse.Attr {
-	return fuse.Attr{Inode: self.inode, Mode: os.ModeDir | 0555}
+	return fuse.Attr{Inode: self.Inode, Mode: os.ModeDir | 0555}
 }
 
 func (self Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
@@ -150,12 +150,12 @@ func (self Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 	dirEnts := []fuse.Dirent{}
 
 	for dirId := range self.dirs {
-		dirDir := fuse.Dirent{Inode: self.dirs[dirId].inode, Name: self.dirs[dirId].name, Type: fuse.DT_Dir}
+		dirDir := fuse.Dirent{Inode: self.dirs[dirId].Inode, Name: self.dirs[dirId].name, Type: fuse.DT_Dir}
 		dirEnts = append(dirEnts, dirDir)
 	}
 
 	for fileId := range self.files {
-		dirFile := fuse.Dirent{Inode: self.files[fileId].inode, Name: self.files[fileId].name, Type: fuse.DT_File}
+		dirFile := fuse.Dirent{Inode: self.files[fileId].Inode, Name: self.files[fileId].name, Type: fuse.DT_File}
 		dirEnts = append(dirEnts, dirFile)
 	}
 
