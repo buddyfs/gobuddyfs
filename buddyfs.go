@@ -36,7 +36,7 @@ func (self BuddyFS) Root() (fs.Node, fuse.Error) {
 			if err == nil {
 				return root, nil
 			} else {
-				glog.Errorf("Error while creating root node: %q", err)
+				glog.Errorf("Error while creating ROOT key: %q", err)
 				return nil, fuse.ENODATA
 			}
 		} else {
@@ -104,7 +104,8 @@ type Dir struct {
 // This method should be related to FS
 // so that the appropriate inode ID can be set.
 func NewDir(name string) *Dir {
-	return &Dir{Block: Block{name: name, Id: rand.Int63()}}
+	// FIXME: Change inode 1 below
+	return &Dir{Block: Block{name: name, inode: 1, Id: rand.Int63()}}
 }
 
 func (self Dir) Attr() fuse.Attr {
