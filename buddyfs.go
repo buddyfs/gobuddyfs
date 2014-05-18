@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"syscall"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -23,7 +24,8 @@ type BuddyFS struct {
 }
 
 type FSMeta struct {
-	NextInode int
+	NextInode uint64
+	Store     *KVStore
 	Dir
 }
 
@@ -57,6 +59,8 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 				err = bfs.Store.Set("ROOT", buffer)
 				if err == nil {
 					bfs.FSM = root
+					bfs.FSM.Root = bfs.FSM
+					bfs.FSM.Store = &bfs.Store
 					return bfs.FSM, nil
 				} else {
 					glog.Errorf("Error while creating ROOT key: %q", err)
@@ -83,6 +87,8 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 		}
 
 		bfs.FSM = &root
+		bfs.FSM.Root = bfs.FSM
+		bfs.FSM.Store = &bfs.Store
 		return bfs.FSM, nil
 	}
 
@@ -126,6 +132,7 @@ type Dir struct {
 	files []Block
 	store KVStore `json:"-"`
 	Block
+	Root *FSMeta `json:"-"`
 }
 
 // This method should be related to FS
@@ -171,6 +178,22 @@ func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 	}
 
 	return nil, fuse.ENOENT
+}
+
+func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error) {
+	_, err := dir.Lookup(req.Name, intr)
+	if err != fuse.ENOENT {
+		return nil, fuse.Errno(syscall.EEXIST)
+	}
+
+	blk := Block{name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
+	dir.Root.NextInode++
+	newDir := &Dir{Block: blk, Root: dir.Root}
+	newDir.Write(*dir.Root.Store)
+
+	dir.dirs = append(dir.dirs, blk)
+	dir.Write(*dir.Root.Store)
+	return newDir, nil
 }
 
 func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
