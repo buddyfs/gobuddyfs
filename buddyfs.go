@@ -25,7 +25,7 @@ type BuddyFS struct {
 
 type FSMeta struct {
 	NextInode uint64
-	Store     *KVStore
+	Store     *KVStore `json:"-"`
 	Dir
 }
 
@@ -156,9 +156,9 @@ func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 	for dirId := range dir.Dirs {
 		if dir.Dirs[dirId].Name == name {
 			var dirDir Dir
-			dirDir.Block.Id = dir.Dirs[dirId].Id
+			dirDir.Id = dir.Dirs[dirId].Id
 
-			err := dirDir.Read(dir.store)
+			err := dirDir.Read(*dir.Root.Store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
 				return nil, fuse.ENODATA
@@ -173,7 +173,7 @@ func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 			var file File
 			file.Block.Id = dir.Files[fileId].Id
 
-			err := file.Read(dir.store)
+			err := file.Read(*dir.Root.Store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
 				return nil, fuse.ENODATA
@@ -193,13 +193,27 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 	}
 
 	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
+
+	// TODO: There has to be some locking here.
+	// Ideally, NextInode++ will be done in another method which does the locking.
 	dir.Root.NextInode++
-	dir.Root.Write(dir.Root, *dir.Root.Store)
+	err = dir.Root.Write(dir.Root, *dir.Root.Store)
+	if err != nil {
+		return nil, fuse.ENODATA
+	}
+
 	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}}
-	newDir.Write(newDir, *dir.Root.Store)
+	err = newDir.Write(newDir, *dir.Root.Store)
+	if err != nil {
+		return nil, fuse.ENODATA
+	}
 
 	dir.Dirs = append(dir.Dirs, blk)
 	dir.Write(dir, *dir.Root.Store)
+	if err != nil {
+		return nil, fuse.ENODATA
+	}
+
 	return newDir, nil
 }
 

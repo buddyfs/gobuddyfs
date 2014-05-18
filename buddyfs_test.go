@@ -3,10 +3,14 @@ package gobuddyfs_test
 import (
 	"encoding/binary"
 	"fmt"
+	"testing"
+
+	"bazil.org/fuse"
+	"bazil.org/fuse/fs"
+
 	"github.com/anupcshan/gobuddyfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"testing"
 )
 
 type MockKVStore struct {
@@ -185,4 +189,20 @@ func TestRootReReadExistingRoot(t *testing.T) {
 	assert.Equal(t, node2, node, "Cached node")
 
 	mkv.AssertExpectations(t)
+}
+
+func TestMkdirWithDuplicate(t *testing.T) {
+	memkv := gobuddyfs.NewMemStore()
+	bfs := gobuddyfs.NewBuddyFS(memkv)
+
+	root, _ := bfs.Root()
+
+	node, err := root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, make(fs.Intr))
+	assert.NoError(t, err)
+	assert.NotNil(t, node, "Newly created directory node should not be nil")
+
+	// Create duplicate directory
+	node, err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, make(fs.Intr))
+	assert.Error(t, err, "Duplicate directory name")
+	assert.Nil(t, node)
 }
