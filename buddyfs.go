@@ -63,7 +63,10 @@ func (self BuddyFS) Root() (fs.Node, fuse.Error) {
 }
 
 type Block struct {
-	Id int64
+	name string
+	// TODO: Can inode number be used as Id?
+	Id    int64
+	inode uint64
 }
 
 func (b *Block) Write(store KVStore) error {
@@ -92,35 +95,76 @@ func (b *Block) Read(store KVStore) error {
 
 // Dir implements both Node and Handle for the root directory.
 type Dir struct {
-	name string
+	dirs  []Block
+	files []Block
+	store KVStore `json:"-"`
 	Block
 }
 
+// This method should be related to FS
+// so that the appropriate inode ID can be set.
 func NewDir(name string) *Dir {
-	return &Dir{name: name, Block: Block{Id: rand.Int63()}}
+	return &Dir{Block: Block{name: name, Id: rand.Int63()}}
 }
 
-func (Dir) Attr() fuse.Attr {
-	return fuse.Attr{Inode: 1, Mode: os.ModeDir | 0555}
+func (self Dir) Attr() fuse.Attr {
+	return fuse.Attr{Inode: self.inode, Mode: os.ModeDir | 0555}
 }
 
-func (Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
-	if name == "hello" {
-		return File{}, nil
+func (self Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
+	for dirId := range self.dirs {
+		if self.dirs[dirId].name == name {
+			var dir Dir
+			dir.Block.Id = self.dirs[dirId].Id
+
+			err := dir.Read(self.store)
+			if err != nil {
+				glog.Errorf("Error while read dir block: %q", err)
+				return nil, fuse.ENODATA
+			}
+
+			return dir, nil
+		}
 	}
+
+	for fileId := range self.files {
+		if self.files[fileId].name == name {
+			var file File
+			file.Block.Id = self.files[fileId].Id
+
+			err := file.Read(self.store)
+			if err != nil {
+				glog.Errorf("Error while read dir block: %q", err)
+				return nil, fuse.ENODATA
+			}
+
+			return file, nil
+		}
+	}
+
 	return nil, fuse.ENOENT
 }
 
-var dirDirs = []fuse.Dirent{
-	{Inode: 2, Name: "hello", Type: fuse.DT_File},
-}
+func (self Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
+	dirEnts := []fuse.Dirent{}
 
-func (Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
-	return dirDirs, nil
+	for dirId := range self.dirs {
+		dirDir := fuse.Dirent{Inode: self.dirs[dirId].inode, Name: self.dirs[dirId].name, Type: fuse.DT_Dir}
+		dirEnts = append(dirEnts, dirDir)
+	}
+
+	for fileId := range self.files {
+		dirFile := fuse.Dirent{Inode: self.files[fileId].inode, Name: self.files[fileId].name, Type: fuse.DT_File}
+		dirEnts = append(dirEnts, dirFile)
+	}
+
+	return dirEnts, nil
 }
 
 // File implements both Node and Handle for the hello file.
-type File struct{}
+type File struct {
+	Block
+}
 
 func (File) Attr() fuse.Attr {
 	return fuse.Attr{Inode: 2, Mode: 0444}
