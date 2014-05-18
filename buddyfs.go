@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -14,52 +15,78 @@ import (
 
 // BuddyFS implements the Buddy file system.
 type BuddyFS struct {
+	Lock  sync.Mutex
 	Store KVStore
+	FSM   *FSMeta
 
 	fs.FS
 }
 
-func (self BuddyFS) Root() (fs.Node, fuse.Error) {
-	rootKey, err := self.Store.Get("ROOT")
+type FSMeta struct {
+	NextInode int
+	Dir
+}
 
-	if err != nil {
-		// Error reading the key
-		return nil, fuse.ENODATA
-	} else if rootKey == nil {
-		// Root key not found
-		root := NewDir("/")
-		err = root.Write(self.Store)
-		if err == nil {
-			buffer := make([]byte, 80)
-			binary.PutVarint(buffer, root.Block.Id)
-			err = self.Store.Set("ROOT", buffer)
+func NewBuddyFS(store KVStore) *BuddyFS {
+	bfs := &BuddyFS{Store: store, Lock: sync.Mutex{}}
+	return bfs
+}
+
+func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
+	return &FSMeta{NextInode: 2,
+		Dir: Dir{Block: Block{name: "/", Inode: 1, Id: rand.Int63()}}}
+}
+
+func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
+	bfs.Lock.Lock()
+	defer bfs.Lock.Unlock()
+
+	if bfs.FSM == nil {
+		rootKey, err := bfs.Store.Get("ROOT")
+
+		if err != nil {
+			// Error reading the key
+			return nil, fuse.ENODATA
+		} else if rootKey == nil {
+			// Root key not found
+			root := bfs.CreateNewFSMetadata()
+			err = root.Write(bfs.Store)
 			if err == nil {
-				return root, nil
+				buffer := make([]byte, 80)
+				binary.PutVarint(buffer, root.Block.Id)
+				err = bfs.Store.Set("ROOT", buffer)
+				if err == nil {
+					bfs.FSM = root
+					return bfs.FSM, nil
+				} else {
+					glog.Errorf("Error while creating ROOT key: %q", err)
+					return nil, fuse.ENODATA
+				}
 			} else {
-				glog.Errorf("Error while creating ROOT key: %q", err)
+				glog.Errorf("Error while creating root node: %q", err)
 				return nil, fuse.ENODATA
 			}
-		} else {
-			glog.Errorf("Error while creating root node: %q", err)
+		}
+
+		var root FSMeta
+		var n int
+		root.Block.Id, n = binary.Varint(rootKey)
+		if n <= 0 {
+			glog.Errorf("Error while decoding root key")
 			return nil, fuse.ENODATA
 		}
+
+		err = root.Read(bfs.Store)
+		if err != nil {
+			glog.Errorf("Error while read root block: %q", err)
+			return nil, fuse.ENODATA
+		}
+
+		bfs.FSM = &root
+		return bfs.FSM, nil
 	}
 
-	var root Dir
-	var n int
-	root.Block.Id, n = binary.Varint(rootKey)
-	if n <= 0 {
-		glog.Errorf("Error while decoding root key")
-		return nil, fuse.ENODATA
-	}
-
-	err = root.Read(self.Store)
-	if err != nil {
-		glog.Errorf("Error while read root block: %q", err)
-		return nil, fuse.ENODATA
-	}
-
-	return root, nil
+	return bfs.FSM, nil
 }
 
 type Block struct {
@@ -108,32 +135,32 @@ func NewDir(name string) *Dir {
 	return &Dir{Block: Block{name: name, Inode: 1, Id: rand.Int63()}}
 }
 
-func (self Dir) Attr() fuse.Attr {
-	return fuse.Attr{Inode: self.Inode, Mode: os.ModeDir | 0555}
+func (dir Dir) Attr() fuse.Attr {
+	return fuse.Attr{Inode: dir.Inode, Mode: os.ModeDir | 0555}
 }
 
-func (self Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
-	for dirId := range self.dirs {
-		if self.dirs[dirId].name == name {
-			var dir Dir
-			dir.Block.Id = self.dirs[dirId].Id
+func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
+	for dirId := range dir.dirs {
+		if dir.dirs[dirId].name == name {
+			var dirDir Dir
+			dirDir.Block.Id = dir.dirs[dirId].Id
 
-			err := dir.Read(self.store)
+			err := dirDir.Read(dir.store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
 				return nil, fuse.ENODATA
 			}
 
-			return dir, nil
+			return dirDir, nil
 		}
 	}
 
-	for fileId := range self.files {
-		if self.files[fileId].name == name {
+	for fileId := range dir.files {
+		if dir.files[fileId].name == name {
 			var file File
-			file.Block.Id = self.files[fileId].Id
+			file.Block.Id = dir.files[fileId].Id
 
-			err := file.Read(self.store)
+			err := file.Read(dir.store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
 				return nil, fuse.ENODATA
@@ -146,16 +173,16 @@ func (self Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 	return nil, fuse.ENOENT
 }
 
-func (self Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
+func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 	dirEnts := []fuse.Dirent{}
 
-	for dirId := range self.dirs {
-		dirDir := fuse.Dirent{Inode: self.dirs[dirId].Inode, Name: self.dirs[dirId].name, Type: fuse.DT_Dir}
+	for dirId := range dir.dirs {
+		dirDir := fuse.Dirent{Inode: dir.dirs[dirId].Inode, Name: dir.dirs[dirId].name, Type: fuse.DT_Dir}
 		dirEnts = append(dirEnts, dirDir)
 	}
 
-	for fileId := range self.files {
-		dirFile := fuse.Dirent{Inode: self.files[fileId].Inode, Name: self.files[fileId].name, Type: fuse.DT_File}
+	for fileId := range dir.files {
+		dirFile := fuse.Dirent{Inode: dir.files[fileId].Inode, Name: dir.files[fileId].name, Type: fuse.DT_File}
 		dirEnts = append(dirEnts, dirFile)
 	}
 

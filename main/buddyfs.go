@@ -35,7 +35,7 @@ func main() {
 
 	memStore := gobuddyfs.NewMemStore()
 
-	err = fs.Serve(c, gobuddyfs.BuddyFS{Store: memStore})
+	err = fs.Serve(c, gobuddyfs.NewBuddyFS(memStore))
 	if err != nil {
 		log.Fatal(err)
 	}
