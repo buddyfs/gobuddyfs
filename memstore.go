@@ -1,7 +1,6 @@
 package gobuddyfs
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -20,7 +19,7 @@ func (self *MemStore) Get(key string) ([]byte, error) {
 	val, ok := self.store[key]
 
 	if !ok {
-		return nil, fmt.Errorf("Key not found")
+		return nil, nil
 	}
 
 	return val, nil
