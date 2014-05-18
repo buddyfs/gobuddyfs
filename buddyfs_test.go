@@ -206,3 +206,56 @@ func TestMkdirWithDuplicate(t *testing.T) {
 	assert.Error(t, err, "Duplicate directory name")
 	assert.Nil(t, node)
 }
+
+func TestParallelMkdirWithDuplicate(t *testing.T) {
+	memkv := gobuddyfs.NewMemStore()
+	bfs := gobuddyfs.NewBuddyFS(memkv)
+
+	root, _ := bfs.Root()
+
+	var node1, node2 fs.Node
+	var err1, err2 fuse.Error
+	done1 := make(chan bool)
+	done2 := make(chan bool)
+
+	mkdir := func(node *fs.Node, err *fuse.Error, done chan bool) {
+		*node, *err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, make(fs.Intr))
+		done <- true
+	}
+
+	go mkdir(&node1, &err1, done1)
+	go mkdir(&node2, &err2, done2)
+
+	<-done1
+	<-done2
+
+	/*
+	 * Constraints:
+	 * - Exactly one of Node1 and Node2 will be non-nil and the other should be nil
+	 * - For each pair of Node_i, Err_i, exactly one of them should be non-nil and the other should be nil
+	 */
+
+	if node1 != nil {
+		t.Logf("Node1 succeeded")
+	} else {
+		t.Logf("Node2 succeeded")
+	}
+
+	if node1 == nil && node2 == nil {
+		t.Errorf("Neither mkdir invocation succeeded while exactly should have.")
+	} else if node1 != nil && node2 != nil {
+		t.Errorf("Both mkdir invocations succeeded while exactly should have.")
+	}
+
+	if node1 == nil && err1 == nil {
+		t.Errorf("Both node and err are nil while exactly one should have been non-nil")
+	} else if node1 != nil && err1 != nil {
+		t.Errorf("Both node and err are non-nil while exactly one should have been non-nil")
+	}
+
+	if node2 == nil && err2 == nil {
+		t.Errorf("Both node and err are nil while exactly one should have been non-nil")
+	} else if node2 != nil && err2 != nil {
+		t.Errorf("Both node and err are non-nil while exactly one should have been non-nil")
+	}
+}
