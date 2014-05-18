@@ -29,6 +29,10 @@ type FSMeta struct {
 	Dir
 }
 
+func (fsm FSMeta) Marshal() ([]byte, error) {
+	return json.Marshal(fsm)
+}
+
 func NewBuddyFS(store KVStore) *BuddyFS {
 	bfs := &BuddyFS{Store: store, Lock: sync.Mutex{}}
 	return bfs
@@ -36,7 +40,8 @@ func NewBuddyFS(store KVStore) *BuddyFS {
 
 func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
 	return &FSMeta{NextInode: 2,
-		Dir: Dir{Block: Block{name: "/", Inode: 1, Id: rand.Int63()}}}
+		Dir: Dir{Block: Block{Name: "/", Inode: 1, Id: rand.Int63()},
+			Dirs: []Block{}, Files: []Block{}}}
 }
 
 func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
@@ -52,7 +57,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 		} else if rootKey == nil {
 			// Root key not found
 			root := bfs.CreateNewFSMetadata()
-			err = root.Write(bfs.Store)
+			err = root.Write(root, bfs.Store)
 			if err == nil {
 				buffer := make([]byte, 80)
 				binary.PutVarint(buffer, root.Block.Id)
@@ -95,15 +100,19 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 	return bfs.FSM, nil
 }
 
+type Marshalable interface {
+	Marshal() ([]byte, error)
+}
+
 type Block struct {
-	name string
+	Name string
 	// TODO: Can inode number be used as Id?
 	Id    int64
 	Inode uint64
 }
 
-func (b *Block) Write(store KVStore) error {
-	bEncoded, err := json.Marshal(b)
+func (b Block) Write(m Marshalable, store KVStore) error {
+	bEncoded, err := m.Marshal()
 	if err != nil {
 		return err
 	}
@@ -128,18 +137,15 @@ func (b *Block) Read(store KVStore) error {
 
 // Dir implements both Node and Handle for the root directory.
 type Dir struct {
-	dirs  []Block
-	files []Block
+	Dirs  []Block
+	Files []Block
 	store KVStore `json:"-"`
 	Block
 	Root *FSMeta `json:"-"`
 }
 
-// This method should be related to FS
-// so that the appropriate inode ID can be set.
-func NewDir(name string) *Dir {
-	// FIXME: Change inode 1 below
-	return &Dir{Block: Block{name: name, Inode: 1, Id: rand.Int63()}}
+func (dir Dir) Marshal() ([]byte, error) {
+	return json.Marshal(dir)
 }
 
 func (dir Dir) Attr() fuse.Attr {
@@ -147,10 +153,10 @@ func (dir Dir) Attr() fuse.Attr {
 }
 
 func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
-	for dirId := range dir.dirs {
-		if dir.dirs[dirId].name == name {
+	for dirId := range dir.Dirs {
+		if dir.Dirs[dirId].Name == name {
 			var dirDir Dir
-			dirDir.Block.Id = dir.dirs[dirId].Id
+			dirDir.Block.Id = dir.Dirs[dirId].Id
 
 			err := dirDir.Read(dir.store)
 			if err != nil {
@@ -162,10 +168,10 @@ func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 		}
 	}
 
-	for fileId := range dir.files {
-		if dir.files[fileId].name == name {
+	for fileId := range dir.Files {
+		if dir.Files[fileId].Name == name {
 			var file File
-			file.Block.Id = dir.files[fileId].Id
+			file.Block.Id = dir.Files[fileId].Id
 
 			err := file.Read(dir.store)
 			if err != nil {
@@ -186,26 +192,27 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 		return nil, fuse.Errno(syscall.EEXIST)
 	}
 
-	blk := Block{name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
+	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
 	dir.Root.NextInode++
-	newDir := &Dir{Block: blk, Root: dir.Root}
-	newDir.Write(*dir.Root.Store)
+	dir.Root.Write(dir.Root, *dir.Root.Store)
+	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}}
+	newDir.Write(newDir, *dir.Root.Store)
 
-	dir.dirs = append(dir.dirs, blk)
-	dir.Write(*dir.Root.Store)
+	dir.Dirs = append(dir.Dirs, blk)
+	dir.Write(dir, *dir.Root.Store)
 	return newDir, nil
 }
 
 func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 	dirEnts := []fuse.Dirent{}
 
-	for dirId := range dir.dirs {
-		dirDir := fuse.Dirent{Inode: dir.dirs[dirId].Inode, Name: dir.dirs[dirId].name, Type: fuse.DT_Dir}
+	for dirId := range dir.Dirs {
+		dirDir := fuse.Dirent{Inode: dir.Dirs[dirId].Inode, Name: dir.Dirs[dirId].Name, Type: fuse.DT_Dir}
 		dirEnts = append(dirEnts, dirDir)
 	}
 
-	for fileId := range dir.files {
-		dirFile := fuse.Dirent{Inode: dir.files[fileId].Inode, Name: dir.files[fileId].name, Type: fuse.DT_File}
+	for fileId := range dir.Files {
+		dirFile := fuse.Dirent{Inode: dir.Files[fileId].Inode, Name: dir.Files[fileId].Name, Type: fuse.DT_File}
 		dirEnts = append(dirEnts, dirFile)
 	}
 
