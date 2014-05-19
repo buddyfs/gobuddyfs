@@ -213,21 +213,27 @@ func TestParallelMkdirWithDuplicate(t *testing.T) {
 
 	root, _ := bfs.Root()
 
-	var node1, node2 fs.Node
-	var err1, err2 fuse.Error
-	done1 := make(chan bool)
-	done2 := make(chan bool)
+	const parallelism = 10
+	nodes := make([]fs.Node, parallelism)
+	errs := make([]fuse.Error, parallelism)
+	dones := make([]chan bool, parallelism)
+
+	for i := 0; i < parallelism; i++ {
+		dones[i] = make(chan bool)
+	}
 
 	mkdir := func(node *fs.Node, err *fuse.Error, done chan bool) {
 		*node, *err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, make(fs.Intr))
 		done <- true
 	}
 
-	go mkdir(&node1, &err1, done1)
-	go mkdir(&node2, &err2, done2)
+	for i := 0; i < parallelism; i++ {
+		go mkdir(&nodes[i], &errs[i], dones[i])
+	}
 
-	<-done1
-	<-done2
+	for i := 0; i < parallelism; i++ {
+		<-dones[i]
+	}
 
 	/*
 	 * Constraints:
@@ -235,27 +241,20 @@ func TestParallelMkdirWithDuplicate(t *testing.T) {
 	 * - For each pair of Node_i, Err_i, exactly one of them should be non-nil and the other should be nil
 	 */
 
-	if node1 != nil {
-		t.Logf("Node1 succeeded")
-	} else {
-		t.Logf("Node2 succeeded")
+	nodesNonNil := 0
+	for i := 0; i < parallelism; i++ {
+		if nodes[i] != nil {
+			nodesNonNil++
+			t.Logf("Node[%d] succeeded", i)
+		}
 	}
+	assert.Equal(t, 1, nodesNonNil, "Exactly one of the mkdirs should have succeeded")
 
-	if node1 == nil && node2 == nil {
-		t.Errorf("Neither mkdir invocation succeeded while exactly should have.")
-	} else if node1 != nil && node2 != nil {
-		t.Errorf("Both mkdir invocations succeeded while exactly should have.")
-	}
-
-	if node1 == nil && err1 == nil {
-		t.Errorf("Both node and err are nil while exactly one should have been non-nil")
-	} else if node1 != nil && err1 != nil {
-		t.Errorf("Both node and err are non-nil while exactly one should have been non-nil")
-	}
-
-	if node2 == nil && err2 == nil {
-		t.Errorf("Both node and err are nil while exactly one should have been non-nil")
-	} else if node2 != nil && err2 != nil {
-		t.Errorf("Both node and err are non-nil while exactly one should have been non-nil")
+	for i := 0; i < parallelism; i++ {
+		if nodes[i] == nil && errs[i] == nil {
+			t.Errorf("Both node and err are nil while exactly one should have been non-nil")
+		} else if nodes[i] != nil && errs[i] != nil {
+			t.Errorf("Both node and err are non-nil while exactly one should have been non-nil")
+		}
 	}
 }

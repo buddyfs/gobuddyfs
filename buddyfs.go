@@ -41,7 +41,7 @@ func NewBuddyFS(store KVStore) *BuddyFS {
 func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
 	return &FSMeta{NextInode: 2,
 		Dir: Dir{Block: Block{Name: "/", Inode: 1, Id: rand.Int63()},
-			Dirs: []Block{}, Files: []Block{}}}
+			Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
 }
 
 func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
@@ -139,9 +139,10 @@ func (b *Block) Read(store KVStore) error {
 type Dir struct {
 	Dirs  []Block
 	Files []Block
+	Lock  sync.RWMutex
 	store KVStore `json:"-"`
+	Root  *FSMeta `json:"-"`
 	Block
-	Root *FSMeta `json:"-"`
 }
 
 func (dir Dir) Marshal() ([]byte, error) {
@@ -153,6 +154,13 @@ func (dir Dir) Attr() fuse.Attr {
 }
 
 func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
+	dir.Lock.RLock()
+	defer dir.Lock.RUnlock()
+
+	return dir.LookupUnlocked(name, intr)
+}
+
+func (dir Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 	for dirId := range dir.Dirs {
 		if dir.Dirs[dirId].Name == name {
 			var dirDir Dir
@@ -187,22 +195,23 @@ func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 }
 
 func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error) {
-	_, err := dir.Lookup(req.Name, intr)
+	dir.Lock.Lock()
+	defer dir.Lock.Unlock()
+
+	_, err := dir.LookupUnlocked(req.Name, intr)
 	if err != fuse.ENOENT {
 		return nil, fuse.Errno(syscall.EEXIST)
 	}
 
 	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
 
-	// TODO: There has to be some locking here.
-	// Ideally, NextInode++ will be done in another method which does the locking.
 	dir.Root.NextInode++
 	err = dir.Root.Write(dir.Root, *dir.Root.Store)
 	if err != nil {
 		return nil, fuse.ENODATA
 	}
 
-	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}}
+	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
 	err = newDir.Write(newDir, *dir.Root.Store)
 	if err != nil {
 		return nil, fuse.ENODATA
