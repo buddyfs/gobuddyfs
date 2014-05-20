@@ -226,6 +226,38 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 	return newDir, nil
 }
 
+func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
+	dir.Lock.Lock()
+	defer dir.Lock.Unlock()
+
+	_, err := dir.LookupUnlocked(req.Name, intr)
+	if err != fuse.ENOENT {
+		return nil, nil, fuse.Errno(syscall.EEXIST)
+	}
+
+	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
+
+	dir.Root.NextInode++
+	err = dir.Root.Write(dir.Root, *dir.Root.Store)
+	if err != nil {
+		return nil, nil, fuse.ENODATA
+	}
+
+	newFile := &File{Block: blk, Blocks: []Block{}}
+	err = newFile.Write(newFile, *dir.Root.Store)
+	if err != nil {
+		return nil, nil, fuse.ENODATA
+	}
+
+	dir.Files = append(dir.Files, blk)
+	dir.Write(dir, *dir.Root.Store)
+	if err != nil {
+		return nil, nil, fuse.ENODATA
+	}
+
+	return newFile, nil, nil
+}
+
 func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 	dirEnts := []fuse.Dirent{}
 
@@ -245,10 +277,15 @@ func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 // File implements both Node and Handle for the hello file.
 type File struct {
 	Block
+	Blocks []Block
 }
 
-func (File) Attr() fuse.Attr {
-	return fuse.Attr{Inode: 2, Mode: 0444}
+func (file File) Marshal() ([]byte, error) {
+	return json.Marshal(file)
+}
+
+func (file File) Attr() fuse.Attr {
+	return fuse.Attr{Inode: file.Inode, Mode: 0444}
 }
 
 func (File) ReadAll(intr fs.Intr) ([]byte, fuse.Error) {

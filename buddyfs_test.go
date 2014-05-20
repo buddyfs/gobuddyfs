@@ -3,6 +3,7 @@ package gobuddyfs_test
 import (
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"bazil.org/fuse"
@@ -255,6 +256,116 @@ func TestParallelMkdirWithDuplicate(t *testing.T) {
 			t.Errorf("Both node and err are nil while exactly one should have been non-nil")
 		} else if nodes[i] != nil && errs[i] != nil {
 			t.Errorf("Both node and err are non-nil while exactly one should have been non-nil")
+		}
+	}
+}
+
+func TestCreateWithDuplicate(t *testing.T) {
+	memkv := gobuddyfs.NewMemStore()
+	bfs := gobuddyfs.NewBuddyFS(memkv)
+
+	root, _ := bfs.Root()
+
+	node, _, err := root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, make(fs.Intr))
+	assert.NoError(t, err)
+	assert.NotNil(t, node, "Newly created file node should not be nil")
+
+	// Create duplicate file
+	node, _, err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, make(fs.Intr))
+	assert.Error(t, err, "Duplicate file name")
+	assert.Nil(t, node)
+}
+
+func TestParallelCreateWithDuplicate(t *testing.T) {
+	memkv := gobuddyfs.NewMemStore()
+	bfs := gobuddyfs.NewBuddyFS(memkv)
+
+	root, _ := bfs.Root()
+
+	const parallelism = 10
+	nodes := make([]fs.Node, parallelism)
+	errs := make([]fuse.Error, parallelism)
+	dones := make([]chan bool, parallelism)
+
+	for i := 0; i < parallelism; i++ {
+		dones[i] = make(chan bool)
+	}
+
+	mkdir := func(node *fs.Node, err *fuse.Error, done chan bool) {
+		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, make(fs.Intr))
+		done <- true
+	}
+
+	for i := 0; i < parallelism; i++ {
+		go mkdir(&nodes[i], &errs[i], dones[i])
+	}
+
+	for i := 0; i < parallelism; i++ {
+		<-dones[i]
+	}
+
+	/*
+	 * Constraints:
+	 * - Exactly one of Node1 and Node2 will be non-nil and the other should be nil
+	 * - For each pair of Node_i, Err_i, exactly one of them should be non-nil and the other should be nil
+	 */
+
+	nodesNonNil := 0
+	for i := 0; i < parallelism; i++ {
+		if nodes[i] != nil {
+			nodesNonNil++
+			t.Logf("Node[%d] succeeded", i)
+		}
+	}
+	assert.Equal(t, 1, nodesNonNil, "Exactly one of the creates should have succeeded")
+
+	for i := 0; i < parallelism; i++ {
+		if nodes[i] == nil && errs[i] == nil {
+			t.Errorf("Both node and err are nil while exactly one should have been non-nil")
+		} else if nodes[i] != nil && errs[i] != nil {
+			t.Errorf("Both node and err are non-nil while exactly one should have been non-nil")
+		}
+	}
+}
+
+func TestParallelCreate(t *testing.T) {
+	memkv := gobuddyfs.NewMemStore()
+	bfs := gobuddyfs.NewBuddyFS(memkv)
+
+	root, _ := bfs.Root()
+
+	const parallelism = 100
+	nodes := make([]fs.Node, parallelism)
+	errs := make([]fuse.Error, parallelism)
+	dones := make([]chan bool, parallelism)
+
+	for i := 0; i < parallelism; i++ {
+		dones[i] = make(chan bool)
+	}
+
+	mkdir := func(node *fs.Node, err *fuse.Error, done chan bool, name string) {
+		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: name}, nil, make(fs.Intr))
+		done <- true
+	}
+
+	for i := 0; i < parallelism; i++ {
+		go mkdir(&nodes[i], &errs[i], dones[i], "name"+strconv.Itoa(i))
+	}
+
+	for i := 0; i < parallelism; i++ {
+		<-dones[i]
+	}
+
+	/*
+	 * Constraints:
+	 * - Exactly one of Node1 and Node2 will be non-nil and the other should be nil
+	 * - For each pair of Node_i, Err_i, exactly one of them should be non-nil and the other should be nil
+	 */
+
+	for i := 0; i < parallelism; i++ {
+		if nodes[i] != nil {
+			assert.NoError(t, errs[i])
+			assert.NotNil(t, nodes[i], "Newly created file node should not be nil")
 		}
 	}
 }
