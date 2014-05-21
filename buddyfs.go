@@ -14,6 +14,8 @@ import (
 	"github.com/golang/glog"
 )
 
+const BLOCK_SIZE = 65536
+
 // BuddyFS implements the Buddy file system.
 type BuddyFS struct {
 	Lock  sync.Mutex
@@ -57,7 +59,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 		} else if rootKey == nil {
 			// Root key not found
 			root := bfs.CreateNewFSMetadata()
-			err = root.Write(root, bfs.Store)
+			err = root.WriteBlock(root, bfs.Store)
 			if err == nil {
 				buffer := make([]byte, 80)
 				binary.PutVarint(buffer, root.Block.Id)
@@ -111,7 +113,7 @@ type Block struct {
 	Inode uint64
 }
 
-func (b Block) Write(m Marshalable, store KVStore) error {
+func (b Block) WriteBlock(m Marshalable, store KVStore) error {
 	bEncoded, err := m.Marshal()
 	if err != nil {
 		return err
@@ -206,19 +208,19 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
 
 	dir.Root.NextInode++
-	err = dir.Root.Write(dir.Root, *dir.Root.Store)
+	err = dir.Root.WriteBlock(dir.Root, *dir.Root.Store)
 	if err != nil {
 		return nil, fuse.ENODATA
 	}
 
 	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
-	err = newDir.Write(newDir, *dir.Root.Store)
+	err = newDir.WriteBlock(newDir, *dir.Root.Store)
 	if err != nil {
 		return nil, fuse.ENODATA
 	}
 
 	dir.Dirs = append(dir.Dirs, blk)
-	dir.Write(dir, *dir.Root.Store)
+	dir.WriteBlock(dir, *dir.Root.Store)
 	if err != nil {
 		return nil, fuse.ENODATA
 	}
@@ -227,6 +229,7 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 }
 
 func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
+	glog.Infof("Creating file %s\n", req.Name)
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
@@ -238,19 +241,19 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
 
 	dir.Root.NextInode++
-	err = dir.Root.Write(dir.Root, *dir.Root.Store)
+	err = dir.Root.WriteBlock(dir.Root, *dir.Root.Store)
 	if err != nil {
 		return nil, nil, fuse.ENODATA
 	}
 
 	newFile := &File{Block: blk, Blocks: []Block{}}
-	err = newFile.Write(newFile, *dir.Root.Store)
+	err = newFile.WriteBlock(newFile, *dir.Root.Store)
 	if err != nil {
 		return nil, nil, fuse.ENODATA
 	}
 
 	dir.Files = append(dir.Files, blk)
-	dir.Write(dir, *dir.Root.Store)
+	dir.WriteBlock(dir, *dir.Root.Store)
 	if err != nil {
 		return nil, nil, fuse.ENODATA
 	}
@@ -277,7 +280,32 @@ func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 // File implements both Node and Handle for the hello file.
 type File struct {
 	Block
+	Size   uint64
 	Blocks []Block
+}
+
+func (file File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
+	glog.Infoln("Setattr called", file.Inode)
+	if file.Size != req.Size {
+		// Resizing!
+		file.Size = req.Size
+		glog.Infoln("Resizing file to size", file.Size)
+		return nil
+	}
+
+	// TODO: Not implemented.
+	return fuse.ENOSYS
+}
+
+func (file File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs.Intr) fuse.Error {
+	glog.Infoln("Writing")
+	if req.Offset >= int64(BLOCK_SIZE*len(file.Blocks)) {
+		// We will not be automatically resizing the file here.
+		return fuse.Errno(syscall.EOVERFLOW)
+	}
+
+	// TODO: Not implemented.
+	return fuse.ENOSYS
 }
 
 func (file File) Marshal() ([]byte, error) {
