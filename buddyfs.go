@@ -33,8 +33,7 @@ type BuddyFS struct {
 }
 
 type FSMeta struct {
-	NextInode uint64
-	Store     *KVStore `json:"-"`
+	Store *KVStore `json:"-"`
 	Dir
 }
 
@@ -48,9 +47,8 @@ func NewBuddyFS(store KVStore) *BuddyFS {
 }
 
 func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
-	return &FSMeta{NextInode: 2,
-		Dir: Dir{Block: Block{Name: "/", Inode: 1, Id: rand.Int63()},
-			Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
+	return &FSMeta{Dir: Dir{Block: Block{Name: "/", Id: rand.Int63()},
+		Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
 }
 
 func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
@@ -116,8 +114,7 @@ type Marshalable interface {
 type Block struct {
 	Name string
 	// TODO: Can inode number be used as Id?
-	Id    int64
-	Inode uint64
+	Id int64
 }
 
 type DataBlock struct {
@@ -167,8 +164,12 @@ func (dir Dir) Marshal() ([]byte, error) {
 	return json.Marshal(dir)
 }
 
+func (dir Dir) Forget() {
+	glog.Infoln("FORGET", dir.Name)
+}
+
 func (dir Dir) Attr() fuse.Attr {
-	return fuse.Attr{Inode: dir.Inode, Mode: os.ModeDir | 0555}
+	return fuse.Attr{Mode: os.ModeDir | 0555}
 }
 
 func (dir Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
@@ -221,13 +222,7 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 		return nil, fuse.Errno(syscall.EEXIST)
 	}
 
-	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
-
-	dir.Root.NextInode++
-	err = dir.Root.WriteBlock(dir.Root, *dir.Root.Store)
-	if err != nil {
-		return nil, fuse.EIO
-	}
+	blk := Block{Name: req.Name, Id: rand.Int63()}
 
 	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
 	err = newDir.WriteBlock(newDir, *dir.Root.Store)
@@ -254,13 +249,7 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 		return f, f, fuse.Errno(syscall.EEXIST)
 	}
 
-	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
-
-	dir.Root.NextInode++
-	err = dir.Root.WriteBlock(dir.Root, *dir.Root.Store)
-	if err != nil {
-		return nil, nil, fuse.EIO
-	}
+	blk := Block{Name: req.Name, Id: rand.Int63()}
 
 	newFile := &File{Block: blk, Blocks: []Block{}, Root: dir.Root}
 	err = newFile.WriteBlock(newFile, *dir.Root.Store)
@@ -281,12 +270,12 @@ func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 	dirEnts := []fuse.Dirent{}
 
 	for dirId := range dir.Dirs {
-		dirDir := fuse.Dirent{Inode: dir.Dirs[dirId].Inode, Name: dir.Dirs[dirId].Name, Type: fuse.DT_Dir}
+		dirDir := fuse.Dirent{Name: dir.Dirs[dirId].Name, Type: fuse.DT_Dir}
 		dirEnts = append(dirEnts, dirDir)
 	}
 
 	for fileId := range dir.Files {
-		dirFile := fuse.Dirent{Inode: dir.Files[fileId].Inode, Name: dir.Files[fileId].Name, Type: fuse.DT_File}
+		dirFile := fuse.Dirent{Name: dir.Files[fileId].Name, Type: fuse.DT_File}
 		dirEnts = append(dirEnts, dirFile)
 	}
 
@@ -307,7 +296,7 @@ func (file File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.Int
 }
 
 func (file File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
-	glog.Infoln("Setattr called", file.Inode)
+	glog.Infoln("Setattr called")
 	glog.Infoln("Req: ", req)
 	if req.Size != 0 {
 		// Resizing!
@@ -327,8 +316,6 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 	dataBytes := len(req.Data)
 	glog.Infof("Writing %d byte(s)", dataBytes)
 	for req.Offset+int64(dataBytes) >= int64(BLOCK_SIZE*len(file.Blocks)) {
-		glog.Infof("Adding extra block to %d", file.Inode)
-
 		blk := Block{Id: rand.Int63()}
 		dBlk := DataBlock{Block: blk, Data: []byte{}}
 		err := dBlk.WriteBlock(dBlk, *file.Root.Store)
@@ -382,7 +369,16 @@ func (file File) Marshal() ([]byte, error) {
 
 func (file File) Attr() fuse.Attr {
 	glog.Infoln("Attr called")
-	return fuse.Attr{Inode: file.Inode, Mode: 0444, Blocks: uint64(len(file.Blocks)), Size: file.Size}
+	return fuse.Attr{Mode: 0444, Blocks: uint64(len(file.Blocks)), Size: file.Size}
+}
+
+func (file File) Release(req *fuse.ReleaseRequest, intr fs.Intr) fuse.Error {
+	glog.Infoln("Release", file.Name)
+	return nil
+}
+
+func (file File) Forget() {
+	glog.Infoln("FORGET", file.Name)
 }
 
 func (file File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.Intr) fuse.Error {
