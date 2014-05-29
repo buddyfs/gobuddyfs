@@ -1,8 +1,11 @@
 package gobuddyfs
 
 import (
-	// "fmt"
 	"sync"
+
+	"github.com/golang/glog"
+
+	// "github.com/golang/glog"
 )
 
 type MemStore struct {
@@ -17,7 +20,7 @@ func NewMemStore() *MemStore {
 }
 
 func (self *MemStore) Get(key string) ([]byte, error) {
-	// fmt.Printf("Get(%s)\n", key)
+	glog.Infof("Get(%s)\n", key)
 	val, ok := self.store[key]
 
 	if !ok {
@@ -28,7 +31,7 @@ func (self *MemStore) Get(key string) ([]byte, error) {
 }
 
 func (self *MemStore) Set(key string, value []byte) error {
-	// fmt.Printf("Set(%s, %s)\n", key, value)
+	// glog.Infof("Set(%s, %s)\n", key, value)
 	self.writeLock.Lock()
 	defer self.writeLock.Unlock()
 

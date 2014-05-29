@@ -16,6 +16,13 @@ import (
 
 const BLOCK_SIZE = 65536
 
+func min(a int, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // BuddyFS implements the Buddy file system.
 type BuddyFS struct {
 	Lock  sync.Mutex
@@ -55,7 +62,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 
 		if err != nil {
 			// Error reading the key
-			return nil, fuse.ENODATA
+			return nil, fuse.EIO
 		} else if rootKey == nil {
 			// Root key not found
 			root := bfs.CreateNewFSMetadata()
@@ -71,11 +78,11 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 					return bfs.FSM, nil
 				} else {
 					glog.Errorf("Error while creating ROOT key: %q", err)
-					return nil, fuse.ENODATA
+					return nil, fuse.EIO
 				}
 			} else {
 				glog.Errorf("Error while creating root node: %q", err)
-				return nil, fuse.ENODATA
+				return nil, fuse.EIO
 			}
 		}
 
@@ -84,13 +91,13 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 		root.Block.Id, n = binary.Varint(rootKey)
 		if n <= 0 {
 			glog.Errorf("Error while decoding root key")
-			return nil, fuse.ENODATA
+			return nil, fuse.EIO
 		}
 
-		err = root.Read(bfs.Store)
+		err = root.ReadBlock(bfs.Store)
 		if err != nil {
 			glog.Errorf("Error while read root block: %q", err)
-			return nil, fuse.ENODATA
+			return nil, fuse.EIO
 		}
 
 		bfs.FSM = &root
@@ -113,6 +120,15 @@ type Block struct {
 	Inode uint64
 }
 
+type DataBlock struct {
+	Block
+	Data []byte
+}
+
+func (dBlock DataBlock) Marshal() ([]byte, error) {
+	return json.Marshal(dBlock)
+}
+
 func (b Block) WriteBlock(m Marshalable, store KVStore) error {
 	bEncoded, err := m.Marshal()
 	if err != nil {
@@ -122,7 +138,7 @@ func (b Block) WriteBlock(m Marshalable, store KVStore) error {
 	return store.Set(strconv.FormatInt(b.Id, 10), bEncoded)
 }
 
-func (b *Block) Read(store KVStore) error {
+func (b *Block) ReadBlock(store KVStore) error {
 	encoded, err := store.Get(strconv.FormatInt(b.Id, 10))
 	if err != nil {
 		return err
@@ -168,10 +184,10 @@ func (dir Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 			var dirDir Dir
 			dirDir.Id = dir.Dirs[dirId].Id
 
-			err := dirDir.Read(*dir.Root.Store)
+			err := dirDir.ReadBlock(*dir.Root.Store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
-				return nil, fuse.ENODATA
+				return nil, fuse.EIO
 			}
 
 			return dirDir, nil
@@ -183,10 +199,10 @@ func (dir Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 			var file File
 			file.Block.Id = dir.Files[fileId].Id
 
-			err := file.Read(*dir.Root.Store)
+			err := file.ReadBlock(*dir.Root.Store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
-				return nil, fuse.ENODATA
+				return nil, fuse.EIO
 			}
 
 			return file, nil
@@ -210,19 +226,19 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 	dir.Root.NextInode++
 	err = dir.Root.WriteBlock(dir.Root, *dir.Root.Store)
 	if err != nil {
-		return nil, fuse.ENODATA
+		return nil, fuse.EIO
 	}
 
 	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
 	err = newDir.WriteBlock(newDir, *dir.Root.Store)
 	if err != nil {
-		return nil, fuse.ENODATA
+		return nil, fuse.EIO
 	}
 
 	dir.Dirs = append(dir.Dirs, blk)
 	dir.WriteBlock(dir, *dir.Root.Store)
 	if err != nil {
-		return nil, fuse.ENODATA
+		return nil, fuse.EIO
 	}
 
 	return newDir, nil
@@ -233,9 +249,9 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
-	_, err := dir.LookupUnlocked(req.Name, intr)
+	f, err := dir.LookupUnlocked(req.Name, intr)
 	if err != fuse.ENOENT {
-		return nil, nil, fuse.Errno(syscall.EEXIST)
+		return f, f, fuse.Errno(syscall.EEXIST)
 	}
 
 	blk := Block{Name: req.Name, Inode: dir.Root.NextInode, Id: rand.Int63()}
@@ -243,22 +259,22 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 	dir.Root.NextInode++
 	err = dir.Root.WriteBlock(dir.Root, *dir.Root.Store)
 	if err != nil {
-		return nil, nil, fuse.ENODATA
+		return nil, nil, fuse.EIO
 	}
 
-	newFile := &File{Block: blk, Blocks: []Block{}}
+	newFile := &File{Block: blk, Blocks: []Block{}, Root: dir.Root}
 	err = newFile.WriteBlock(newFile, *dir.Root.Store)
 	if err != nil {
-		return nil, nil, fuse.ENODATA
+		return nil, nil, fuse.EIO
 	}
 
 	dir.Files = append(dir.Files, blk)
 	dir.WriteBlock(dir, *dir.Root.Store)
 	if err != nil {
-		return nil, nil, fuse.ENODATA
+		return nil, nil, fuse.EIO
 	}
 
-	return newFile, nil, nil
+	return newFile, newFile, nil
 }
 
 func (dir Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
@@ -282,30 +298,80 @@ type File struct {
 	Block
 	Size   uint64
 	Blocks []Block
+	Root   *FSMeta `json:"-"`
+}
+
+func (file File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
+	glog.Infoln("Open called")
+	return file, nil
 }
 
 func (file File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
 	glog.Infoln("Setattr called", file.Inode)
-	if file.Size != req.Size {
+	glog.Infoln("Req: ", req)
+	if req.Size != 0 {
 		// Resizing!
 		file.Size = req.Size
 		glog.Infoln("Resizing file to size", file.Size)
+		res.Attr = file.Attr()
 		return nil
 	}
 
+	res.Attr = file.Attr()
+	glog.Infoln("Finished Setattr")
 	// TODO: Not implemented.
-	return fuse.ENOSYS
+	return nil
 }
 
-func (file File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs.Intr) fuse.Error {
-	glog.Infoln("Writing")
-	if req.Offset >= int64(BLOCK_SIZE*len(file.Blocks)) {
-		// We will not be automatically resizing the file here.
-		return fuse.Errno(syscall.EOVERFLOW)
+func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs.Intr) fuse.Error {
+	dataBytes := len(req.Data)
+	glog.Infof("Writing %d byte(s)", dataBytes)
+	for req.Offset+int64(dataBytes) >= int64(BLOCK_SIZE*len(file.Blocks)) {
+		glog.Infof("Adding extra block to %d", file.Inode)
+
+		blk := Block{Id: rand.Int63()}
+		dBlk := DataBlock{Block: blk, Data: []byte{}}
+		err := dBlk.WriteBlock(dBlk, *file.Root.Store)
+		if err != nil {
+			return fuse.EIO
+		}
+
+		file.Blocks = append(file.Blocks, blk)
+		err = file.WriteBlock(file, *file.Root.Store)
+		if err != nil {
+			return fuse.EIO
+		}
 	}
 
-	// TODO: Not implemented.
-	return fuse.ENOSYS
+	startBlockId := req.Offset / BLOCK_SIZE
+	startBlockLoc := file.Blocks[startBlockId]
+
+	var startBlock DataBlock
+	startBlock.Block.Id = startBlockLoc.Id
+
+	err := startBlock.ReadBlock(*file.Root.Store)
+	if err != nil {
+		glog.Errorf("Error while read root block: %q", err)
+		return fuse.EIO
+	}
+
+	bytesToAdd := min(BLOCK_SIZE-len(startBlock.Data), dataBytes)
+	startBlock.Data = append(startBlock.Data, req.Data[0:bytesToAdd]...)
+	err = startBlock.WriteBlock(startBlock, *file.Root.Store)
+	if err != nil {
+		glog.Error(err)
+		return fuse.EIO
+	}
+
+	glog.Infoln("Successfully completed write operation")
+	res.Size = bytesToAdd
+	file.Size += uint64(bytesToAdd)
+
+	err = file.WriteBlock(file, *file.Root.Store)
+	if err != nil {
+		return fuse.EIO
+	}
+	return nil
 }
 
 func (file File) Marshal() ([]byte, error) {
@@ -313,9 +379,11 @@ func (file File) Marshal() ([]byte, error) {
 }
 
 func (file File) Attr() fuse.Attr {
-	return fuse.Attr{Inode: file.Inode, Mode: 0444}
+	glog.Infoln("Attr called")
+	return fuse.Attr{Inode: file.Inode, Mode: 0444, Blocks: uint64(len(file.Blocks)), Size: file.Size}
 }
 
-func (File) ReadAll(intr fs.Intr) ([]byte, fuse.Error) {
-	return []byte("hello, world\n"), nil
+func (file File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.Intr) fuse.Error {
+	glog.Infoln("Read called")
+	return nil
 }
