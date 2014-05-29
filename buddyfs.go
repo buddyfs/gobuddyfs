@@ -14,7 +14,7 @@ import (
 	"github.com/golang/glog"
 )
 
-const BLOCK_SIZE = 65536
+const BLOCK_SIZE = 8192
 
 func min(a int, b int) int {
 	if a < b {
@@ -94,7 +94,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 			return nil, fuse.EIO
 		}
 
-		err = root.ReadBlock(bfs.Store)
+		err = root.ReadBlock(&root, bfs.Store)
 		if err != nil {
 			glog.Errorf("Error while read root block: %q", err)
 			return nil, fuse.EIO
@@ -138,13 +138,13 @@ func (b Block) WriteBlock(m Marshalable, store KVStore) error {
 	return store.Set(strconv.FormatInt(b.Id, 10), bEncoded)
 }
 
-func (b *Block) ReadBlock(store KVStore) error {
+func (b *Block) ReadBlock(m interface{}, store KVStore) error {
 	encoded, err := store.Get(strconv.FormatInt(b.Id, 10))
 	if err != nil {
 		return err
 	}
 
-	err = json.Unmarshal(encoded, b)
+	err = json.Unmarshal(encoded, m)
 
 	if err != nil {
 		return err
@@ -184,7 +184,7 @@ func (dir Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 			var dirDir Dir
 			dirDir.Id = dir.Dirs[dirId].Id
 
-			err := dirDir.ReadBlock(*dir.Root.Store)
+			err := dirDir.ReadBlock(&dirDir, *dir.Root.Store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
 				return nil, fuse.EIO
@@ -199,7 +199,7 @@ func (dir Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 			var file File
 			file.Block.Id = dir.Files[fileId].Id
 
-			err := file.ReadBlock(*dir.Root.Store)
+			err := file.ReadBlock(&file, *dir.Root.Store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
 				return nil, fuse.EIO
@@ -349,14 +349,16 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 	var startBlock DataBlock
 	startBlock.Block.Id = startBlockLoc.Id
 
-	err := startBlock.ReadBlock(*file.Root.Store)
+	err := startBlock.ReadBlock(&startBlock, *file.Root.Store)
 	if err != nil {
 		glog.Errorf("Error while read root block: %q", err)
 		return fuse.EIO
 	}
 
+	glog.Infof("Block content length: %d", len(startBlock.Data))
 	bytesToAdd := min(BLOCK_SIZE-len(startBlock.Data), dataBytes)
 	startBlock.Data = append(startBlock.Data, req.Data[0:bytesToAdd]...)
+	glog.Infof("Block content length after: %d", len(startBlock.Data))
 	err = startBlock.WriteBlock(startBlock, *file.Root.Store)
 	if err != nil {
 		glog.Error(err)
@@ -384,6 +386,33 @@ func (file File) Attr() fuse.Attr {
 }
 
 func (file File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.Intr) fuse.Error {
-	glog.Infoln("Read called")
+	glog.Infof("Reading %d byte(s) at offset %d", req.Size, req.Offset)
+
+	if req.Offset > int64(file.Size) {
+		res.Data = []byte{}
+		return nil
+	}
+
+	res.Data = []byte{}
+
+	startBlockId := req.Offset / BLOCK_SIZE
+	startBlockLoc := file.Blocks[startBlockId]
+
+	var startBlock DataBlock
+	startBlock.Block.Id = startBlockLoc.Id
+
+	err := startBlock.ReadBlock(&startBlock, *file.Root.Store)
+	if err != nil {
+		glog.Errorf("Error while reading block: %q", err)
+		return fuse.EIO
+	}
+
+	beginReadByte := int(req.Offset % BLOCK_SIZE)
+	endReadByte := min(len(startBlock.Data)-beginReadByte, req.Size)
+	glog.Infof("Block content length: %d", len(startBlock.Data))
+
+	glog.Infof("Reading from %d to %d in block %d", beginReadByte, endReadByte+beginReadByte, startBlockId)
+	res.Data = startBlock.Data[beginReadByte : endReadByte+beginReadByte]
+
 	return nil
 }
