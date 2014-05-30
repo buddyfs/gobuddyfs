@@ -12,14 +12,41 @@ import (
 // File implements both Node and Handle for the hello file.
 type File struct {
 	Block
-	Size   uint64
-	Blocks []Block
-	Root   *FSMeta `json:"-"`
+	Size       uint64
+	Blocks     []Block
+	Root       *FSMeta      `json:"-"`
+	BlockCache []*DataBlock `json:"-"`
 }
 
 func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
 	glog.Infoln("Open called")
 	return file, nil
+}
+
+func (file *File) getBlock(index int64) *DataBlock {
+	glog.Infoln("GetBlock: ", index)
+	if int(index) > len(file.BlockCache) {
+		return nil
+	}
+
+	if file.BlockCache[index] == nil {
+		var startBlock DataBlock
+		startBlock.Block.Id = file.Blocks[index].Id
+		err := startBlock.ReadBlock(&startBlock, *file.Root.Store)
+		if err != nil {
+			glog.Errorf("Error while reading data block: %q", err)
+			return nil
+		}
+
+		file.BlockCache[index] = &startBlock
+	}
+
+	return file.BlockCache[index]
+}
+
+func (file *File) appendBlock(dblk *DataBlock) {
+	glog.Infoln("AppendBlock: ", len(file.BlockCache))
+	file.BlockCache = append(file.BlockCache, dblk)
 }
 
 func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
@@ -36,6 +63,7 @@ func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, i
 			if numBlocks < uint64(len(file.Blocks)) {
 				blocksToDelete := file.Blocks[numBlocks:]
 				file.Blocks = file.Blocks[:numBlocks]
+				file.BlockCache = file.BlockCache[:numBlocks]
 
 				for blk := range blocksToDelete {
 					glog.Warningln("Removing ", blocksToDelete[blk].Id)
@@ -68,48 +96,29 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 	for req.Offset+int64(dataBytes) >= int64(BLOCK_SIZE*len(file.Blocks)) {
 		blk := Block{Id: rand.Int63()}
 		dBlk := DataBlock{Block: blk, Data: []byte{}}
-		err := dBlk.WriteBlock(dBlk, *file.Root.Store)
-		if err != nil {
-			return fuse.EIO
-		}
+		dBlk.MarkDirty()
 
 		file.Blocks = append(file.Blocks, blk)
-		err = file.WriteBlock(file, *file.Root.Store)
-		if err != nil {
-			return fuse.EIO
-		}
+		file.appendBlock(&dBlk)
+		file.MarkDirty()
 	}
 
 	startBlockId := req.Offset / BLOCK_SIZE
-	startBlockLoc := file.Blocks[startBlockId]
 
-	var startBlock DataBlock
-	startBlock.Block.Id = startBlockLoc.Id
-
-	err := startBlock.ReadBlock(&startBlock, *file.Root.Store)
-	if err != nil {
-		glog.Errorf("Error while read root block: %q", err)
-		return fuse.EIO
-	}
+	var startBlock *DataBlock = file.getBlock(startBlockId)
 
 	glog.Infof("Block content length: %d", len(startBlock.Data))
 	bytesToAdd := min(BLOCK_SIZE-len(startBlock.Data), dataBytes)
 	startBlock.Data = append(startBlock.Data, req.Data[0:bytesToAdd]...)
 	glog.Infof("Block content length after: %d", len(startBlock.Data))
-	err = startBlock.WriteBlock(startBlock, *file.Root.Store)
-	if err != nil {
-		glog.Error(err)
-		return fuse.EIO
-	}
+
+	startBlock.MarkDirty()
 
 	glog.Infoln("Successfully completed write operation")
 	res.Size = bytesToAdd
 	file.Size += uint64(bytesToAdd)
 
-	err = file.WriteBlock(file, *file.Root.Store)
-	if err != nil {
-		return fuse.EIO
-	}
+	file.MarkDirty()
 	return nil
 }
 
@@ -132,7 +141,16 @@ func (file *File) Forget() {
 }
 
 func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
-	glog.Infoln("FLUSH", file.Name)
+	glog.Infoln("FLUSH", file.Name, file.IsDirty())
+	for i := range file.Blocks {
+		if file.Blocks[i].IsDirty() {
+			file.Blocks[i].WriteBlock(file.getBlock(int64(i)), *file.Root.Store)
+		}
+	}
+
+	if file.IsDirty() {
+		file.WriteBlock(file, *file.Root.Store)
+	}
 	return nil
 }
 
@@ -147,14 +165,10 @@ func (file *File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.In
 	res.Data = []byte{}
 
 	startBlockId := req.Offset / BLOCK_SIZE
-	startBlockLoc := file.Blocks[startBlockId]
 
-	var startBlock DataBlock
-	startBlock.Block.Id = startBlockLoc.Id
-
-	err := startBlock.ReadBlock(&startBlock, *file.Root.Store)
-	if err != nil {
-		glog.Errorf("Error while reading block: %q", err)
+	var startBlock *DataBlock = file.getBlock(startBlockId)
+	if startBlock == nil {
+		glog.Error("Error while reading block")
 		return fuse.EIO
 	}
 

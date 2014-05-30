@@ -112,7 +112,8 @@ type Marshalable interface {
 type Block struct {
 	Name string
 	// TODO: Can inode number be used as Id?
-	Id int64
+	Id    int64
+	dirty bool `json:"-"`
 }
 
 type DataBlock struct {
@@ -124,13 +125,30 @@ func (dBlock DataBlock) Marshal() ([]byte, error) {
 	return json.Marshal(dBlock)
 }
 
-func (b Block) WriteBlock(m Marshalable, store KVStore) error {
+func (b *Block) MarkDirty() {
+	b.dirty = true
+}
+
+func (b Block) IsDirty() bool {
+	return b.dirty
+}
+
+func (b *Block) WriteBlock(m Marshalable, store KVStore) error {
+	// Don't make a write if not dirty
+	if b.dirty == false {
+		return nil
+	}
+
 	bEncoded, err := m.Marshal()
 	if err != nil {
 		return err
 	}
 
-	return store.Set(strconv.FormatInt(b.Id, 10), bEncoded)
+	err = store.Set(strconv.FormatInt(b.Id, 10), bEncoded)
+	if err == nil {
+		b.dirty = false
+	}
+	return err
 }
 
 func (b *Block) ReadBlock(m interface{}, store KVStore) error {
@@ -144,6 +162,8 @@ func (b *Block) ReadBlock(m interface{}, store KVStore) error {
 	if err != nil {
 		return err
 	}
+
+	b.dirty = false
 
 	return nil
 }
