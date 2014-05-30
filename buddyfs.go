@@ -244,9 +244,9 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
-	f, err := dir.LookupUnlocked(req.Name, intr)
+	_, err := dir.LookupUnlocked(req.Name, intr)
 	if err != fuse.ENOENT {
-		return f, f, fuse.Errno(syscall.EEXIST)
+		return nil, nil, fuse.Errno(syscall.EEXIST)
 	}
 
 	blk := Block{Name: req.Name, Id: rand.Int63()}
