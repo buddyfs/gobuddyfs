@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/pprof"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -32,6 +33,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer c.Close()
+
+	f, err := os.Create("buddyfs.prof")
+	if err != nil {
+		log.Fatal(err)
+	}
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
 
 	memStore := gobuddyfs.NewMemStore()
 

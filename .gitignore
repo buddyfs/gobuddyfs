@@ -22,4 +22,8 @@ _testmain.go
 *.exe
 *.test
 
+# Vim files
 *.swp
+
+# Profile files
+*.prof

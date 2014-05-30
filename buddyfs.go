@@ -14,7 +14,7 @@ import (
 	"github.com/golang/glog"
 )
 
-const BLOCK_SIZE = 8192
+const BLOCK_SIZE = 65536
 
 func min(a int, b int) int {
 	if a < b {
