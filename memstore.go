@@ -20,7 +20,9 @@ func NewMemStore() *MemStore {
 }
 
 func (self *MemStore) Get(key string) ([]byte, error) {
-	glog.Infof("Get(%s)\n", key)
+	if glog.V(2) {
+		glog.Infof("Get(%s)\n", key)
+	}
 	val, ok := self.store[key]
 
 	if !ok {
@@ -31,7 +33,9 @@ func (self *MemStore) Get(key string) ([]byte, error) {
 }
 
 func (self *MemStore) Set(key string, value []byte) error {
-	// glog.Infof("Set(%s, %s)\n", key, value)
+	if glog.V(2) {
+		// glog.Infof("Set(%s, %s)\n", key, value)
+	}
 	self.writeLock.Lock()
 	defer self.writeLock.Unlock()
 

@@ -19,7 +19,9 @@ type File struct {
 }
 
 func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
-	glog.Infoln("Open called")
+	if glog.V(2) {
+		glog.Infoln("Open called")
+	}
 	return file, nil
 }
 
@@ -45,13 +47,17 @@ func (file *File) getBlock(index int64) *DataBlock {
 }
 
 func (file *File) appendBlock(dblk *DataBlock) {
-	glog.Infoln("AppendBlock: ", len(file.BlockCache))
+	if glog.V(2) {
+		glog.Infoln("AppendBlock: ", len(file.BlockCache))
+	}
 	file.BlockCache = append(file.BlockCache, dblk)
 }
 
 func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
-	glog.Infoln("Setattr called")
-	glog.Infoln("Req: ", req)
+	if glog.V(2) {
+		glog.Infoln("Setattr called")
+		glog.Infoln("Req: ", req)
+	}
 
 	valid := req.Valid
 	if valid.Size() && req.Size != file.Size {
@@ -79,20 +85,26 @@ func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, i
 			return fuse.EIO
 		}
 
-		glog.Infoln("Resizing file to size", file.Size)
+		if glog.V(2) {
+			glog.Infoln("Resizing file to size", file.Size)
+		}
 		res.Attr = file.Attr()
 		return nil
 	}
 
 	res.Attr = file.Attr()
-	glog.Infoln("Finished Setattr")
+	if glog.V(2) {
+		glog.Infoln("Finished Setattr")
+	}
 	// TODO: Not implemented.
 	return nil
 }
 
 func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs.Intr) fuse.Error {
 	dataBytes := len(req.Data)
-	glog.Infof("Writing %d byte(s)", dataBytes)
+	if glog.V(2) {
+		glog.Infof("Writing %d byte(s)", dataBytes)
+	}
 	for req.Offset+int64(dataBytes) >= int64(BLOCK_SIZE*len(file.Blocks)) {
 		blk := Block{Id: rand.Int63()}
 		dBlk := DataBlock{Block: blk, Data: []byte{}}
@@ -107,14 +119,20 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 
 	var startBlock *DataBlock = file.getBlock(startBlockId)
 
-	glog.Infof("Block content length: %d", len(startBlock.Data))
+	if glog.V(2) {
+		glog.Infof("Block content length: %d", len(startBlock.Data))
+	}
 	bytesToAdd := min(BLOCK_SIZE-len(startBlock.Data), dataBytes)
 	startBlock.Data = append(startBlock.Data, req.Data[0:bytesToAdd]...)
-	glog.Infof("Block content length after: %d", len(startBlock.Data))
+	if glog.V(2) {
+		glog.Infof("Block content length after: %d", len(startBlock.Data))
+	}
 
 	startBlock.MarkDirty()
 
-	glog.Infoln("Successfully completed write operation")
+	if glog.V(2) {
+		glog.Infoln("Successfully completed write operation")
+	}
 	res.Size = bytesToAdd
 	file.Size += uint64(bytesToAdd)
 
@@ -127,21 +145,29 @@ func (file *File) Marshal() ([]byte, error) {
 }
 
 func (file File) Attr() fuse.Attr {
-	glog.Infoln("Attr called")
+	if glog.V(2) {
+		glog.Infoln("Attr called")
+	}
 	return fuse.Attr{Mode: 0444, Blocks: uint64(len(file.Blocks)), Size: file.Size}
 }
 
 func (file *File) Release(req *fuse.ReleaseRequest, intr fs.Intr) fuse.Error {
-	glog.Infoln("Release", file.Name)
+	if glog.V(2) {
+		glog.Infoln("Release", file.Name)
+	}
 	return nil
 }
 
 func (file *File) Forget() {
-	glog.Infoln("FORGET", file.Name)
+	if glog.V(2) {
+		glog.Infoln("FORGET", file.Name)
+	}
 }
 
 func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
-	glog.Infoln("FLUSH", file.Name, file.IsDirty())
+	if glog.V(2) {
+		glog.Infoln("FLUSH", file.Name, file.IsDirty())
+	}
 	for i := range file.Blocks {
 		if file.Blocks[i].IsDirty() {
 			file.Blocks[i].WriteBlock(file.getBlock(int64(i)), *file.Root.Store)
@@ -155,7 +181,9 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 }
 
 func (file *File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.Intr) fuse.Error {
-	glog.Infof("Reading %d byte(s) at offset %d", req.Size, req.Offset)
+	if glog.V(2) {
+		glog.Infof("Reading %d byte(s) at offset %d", req.Size, req.Offset)
+	}
 
 	if req.Offset > int64(file.Size) {
 		res.Data = []byte{}
@@ -174,9 +202,10 @@ func (file *File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.In
 
 	beginReadByte := int(req.Offset % BLOCK_SIZE)
 	endReadByte := min(len(startBlock.Data)-beginReadByte, req.Size)
-	glog.Infof("Block content length: %d", len(startBlock.Data))
-
-	glog.Infof("Reading from %d to %d in block %d", beginReadByte, endReadByte+beginReadByte, startBlockId)
+	if glog.V(2) {
+		glog.Infof("Block content length: %d", len(startBlock.Data))
+		glog.Infof("Reading from %d to %d in block %d", beginReadByte, endReadByte+beginReadByte, startBlockId)
+	}
 	res.Data = startBlock.Data[beginReadByte : endReadByte+beginReadByte]
 
 	return nil

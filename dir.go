@@ -29,7 +29,9 @@ func (dir *Dir) Marshal() ([]byte, error) {
 }
 
 func (dir *Dir) Forget() {
-	glog.Infoln("FORGET", dir.Name)
+	if glog.V(2) {
+		glog.Infoln("FORGET", dir.Name)
+	}
 }
 
 func (dir Dir) Attr() fuse.Attr {
@@ -104,7 +106,9 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 }
 
 func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
-	glog.Infof("Creating file %s\n", req.Name)
+	if glog.V(2) {
+		glog.Infof("Creating file %s\n", req.Name)
+	}
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
