@@ -115,7 +115,7 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
 
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
-	isDir, posn, _, err := dir.LookupUnlocked(req.Name, intr)
+	isDir, posn, node, err := dir.LookupUnlocked(req.Name, intr)
 
 	if err != nil {
 		return err
@@ -123,6 +123,24 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
 
 	if !isDir {
 		dir.Files = append(dir.Files[:posn], dir.Files[posn+1:]...)
+		dir.MarkDirty()
+		dir.WriteBlock(dir, *dir.Root.Store)
+		if err != nil {
+			return fuse.EIO
+		}
+
+		return nil
+	} else {
+		dirDir, ok := node.(Dir)
+		if !ok {
+			return fuse.EIO
+		}
+
+		if len(dirDir.Dirs) != 0 || len(dirDir.Files) != 0 {
+			return fuse.Errno(syscall.ENOTEMPTY)
+		}
+
+		dir.Dirs = append(dir.Dirs[:posn], dir.Dirs[posn+1:]...)
 		dir.MarkDirty()
 		dir.WriteBlock(dir, *dir.Root.Store)
 		if err != nil {
