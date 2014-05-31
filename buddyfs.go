@@ -12,7 +12,7 @@ import (
 	"github.com/golang/glog"
 )
 
-const BLOCK_SIZE = 65536
+const BLOCK_SIZE = 262144
 
 func min(a int, b int) int {
 	if a < b {
@@ -62,6 +62,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 		} else if rootKey == nil {
 			// Root key not found
 			root := bfs.CreateNewFSMetadata()
+			root.MarkDirty()
 			err = root.WriteBlock(root, bfs.Store)
 			if err == nil {
 				buffer := make([]byte, 80)

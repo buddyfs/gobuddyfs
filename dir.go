@@ -17,9 +17,9 @@ import (
 type Dir struct {
 	Dirs  []Block
 	Files []Block
-	Lock  sync.RWMutex
-	store KVStore `json:"-"`
-	Root  *FSMeta `json:"-"`
+	Lock  sync.RWMutex `json:"-"`
+	store KVStore      `json:"-"`
+	Root  *FSMeta      `json:"-"`
 	Block
 	fs.Node
 }
@@ -42,10 +42,11 @@ func (dir *Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 	dir.Lock.RLock()
 	defer dir.Lock.RUnlock()
 
-	return dir.LookupUnlocked(name, intr)
+	_, _, node, err := dir.LookupUnlocked(name, intr)
+	return node, err
 }
 
-func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) {
+func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, fuse.Error) {
 	for dirId := range dir.Dirs {
 		if dir.Dirs[dirId].Name == name {
 			var dirDir Dir
@@ -54,10 +55,10 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) 
 			err := dirDir.ReadBlock(&dirDir, *dir.Root.Store)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
-				return nil, fuse.EIO
+				return true, dirId, nil, fuse.EIO
 			}
 
-			return dirDir, nil
+			return true, dirId, dirDir, nil
 		}
 	}
 
@@ -68,22 +69,22 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (fs.Node, fuse.Error) 
 
 			err := file.ReadBlock(&file, *dir.Root.Store)
 			if err != nil {
-				glog.Errorf("Error while read dir block: %q", err)
-				return nil, fuse.EIO
+				glog.Errorf("Error while read file block: %q", err)
+				return false, fileId, nil, fuse.EIO
 			}
 
-			return file, nil
+			return false, fileId, file, nil
 		}
 	}
 
-	return nil, fuse.ENOENT
+	return false, 0, nil, fuse.ENOENT
 }
 
 func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error) {
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
-	_, err := dir.LookupUnlocked(req.Name, intr)
+	_, _, _, err := dir.LookupUnlocked(req.Name, intr)
 	if err != fuse.ENOENT {
 		return nil, fuse.Errno(syscall.EEXIST)
 	}
@@ -91,18 +92,47 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 	blk := Block{Name: req.Name, Id: rand.Int63()}
 
 	newDir := &Dir{Block: blk, Root: dir.Root, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
+	newDir.MarkDirty()
 	err = newDir.WriteBlock(newDir, *dir.Root.Store)
 	if err != nil {
 		return nil, fuse.EIO
 	}
 
 	dir.Dirs = append(dir.Dirs, blk)
+	dir.MarkDirty()
 	dir.WriteBlock(dir, *dir.Root.Store)
 	if err != nil {
 		return nil, fuse.EIO
 	}
 
 	return newDir, nil
+}
+
+func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
+	if glog.V(2) {
+		glog.Infof("Removing %s", req.Name)
+	}
+
+	dir.Lock.Lock()
+	defer dir.Lock.Unlock()
+	isDir, posn, _, err := dir.LookupUnlocked(req.Name, intr)
+
+	if err != nil {
+		return err
+	}
+
+	if !isDir {
+		dir.Files = append(dir.Files[:posn], dir.Files[posn+1:]...)
+		dir.MarkDirty()
+		dir.WriteBlock(dir, *dir.Root.Store)
+		if err != nil {
+			return fuse.EIO
+		}
+
+		return nil
+	}
+
+	return fuse.ENOSYS
 }
 
 func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
@@ -112,7 +142,7 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
-	_, err := dir.LookupUnlocked(req.Name, intr)
+	_, _, _, err := dir.LookupUnlocked(req.Name, intr)
 	if err != fuse.ENOENT {
 		return nil, nil, fuse.Errno(syscall.EEXIST)
 	}
@@ -120,12 +150,14 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 	blk := Block{Name: req.Name, Id: rand.Int63()}
 
 	newFile := &File{Block: blk, Blocks: []Block{}, Root: dir.Root}
+	newFile.MarkDirty()
 	err = newFile.WriteBlock(newFile, *dir.Root.Store)
 	if err != nil {
 		return nil, nil, fuse.EIO
 	}
 
 	dir.Files = append(dir.Files, blk)
+	dir.MarkDirty()
 	dir.WriteBlock(dir, *dir.Root.Store)
 	if err != nil {
 		return nil, nil, fuse.EIO

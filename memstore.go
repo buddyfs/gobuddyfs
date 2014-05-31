@@ -34,7 +34,7 @@ func (self *MemStore) Get(key string) ([]byte, error) {
 
 func (self *MemStore) Set(key string, value []byte) error {
 	if glog.V(2) {
-		// glog.Infof("Set(%s, %s)\n", key, value)
+		glog.Infof("Set(%s)\n", key)
 	}
 	self.writeLock.Lock()
 	defer self.writeLock.Unlock()

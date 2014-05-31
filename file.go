@@ -103,7 +103,7 @@ func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, i
 func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs.Intr) fuse.Error {
 	dataBytes := len(req.Data)
 	if glog.V(2) {
-		glog.Infof("Writing %d byte(s)", dataBytes)
+		glog.Infof("Writing %d byte(s) at offset %d", dataBytes, req.Offset)
 	}
 	for req.Offset+int64(dataBytes) >= int64(BLOCK_SIZE*len(file.Blocks)) {
 		blk := Block{Id: rand.Int63()}
@@ -122,8 +122,15 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 	if glog.V(2) {
 		glog.Infof("Block content length: %d", len(startBlock.Data))
 	}
-	bytesToAdd := min(BLOCK_SIZE-len(startBlock.Data), dataBytes)
-	startBlock.Data = append(startBlock.Data, req.Data[0:bytesToAdd]...)
+
+	oldLen := len(startBlock.Data)
+	bytesToAdd := min(BLOCK_SIZE-int(req.Offset%BLOCK_SIZE), dataBytes)
+	data := append(startBlock.Data[:(req.Offset%BLOCK_SIZE)], req.Data[:bytesToAdd]...)
+	if len(startBlock.Data) >= int(req.Offset%BLOCK_SIZE)+bytesToAdd {
+		data = append(data, startBlock.Data[int(req.Offset%BLOCK_SIZE)+bytesToAdd:]...)
+	}
+	startBlock.Data = data
+
 	if glog.V(2) {
 		glog.Infof("Block content length after: %d", len(startBlock.Data))
 	}
@@ -133,8 +140,9 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 	if glog.V(2) {
 		glog.Infoln("Successfully completed write operation")
 	}
+
 	res.Size = bytesToAdd
-	file.Size += uint64(bytesToAdd)
+	file.Size = file.Size + uint64(len(startBlock.Data)) - uint64(oldLen)
 
 	file.MarkDirty()
 	return nil
@@ -180,12 +188,19 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 	return nil
 }
 
+func (file *File) Fsync(req *fuse.FsyncRequest, intr fs.Intr) fuse.Error {
+	if glog.V(2) {
+		glog.Infoln("FSYNC", file.Name, file.IsDirty())
+	}
+	return file.Flush(nil, intr)
+}
+
 func (file *File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.Intr) fuse.Error {
 	if glog.V(2) {
 		glog.Infof("Reading %d byte(s) at offset %d", req.Size, req.Offset)
 	}
 
-	if req.Offset > int64(file.Size) {
+	if req.Offset >= int64(file.Size) {
 		res.Data = []byte{}
 		return nil
 	}
