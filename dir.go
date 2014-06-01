@@ -81,6 +81,14 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, f
 }
 
 func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error) {
+	if glog.V(2) {
+		glog.Infof("Mkdir %s %d", req.Name, len(req.Name))
+	}
+
+	if len(req.Name) > 255 {
+		return nil, fuse.Errno(syscall.ENAMETOOLONG)
+	}
+
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
@@ -110,7 +118,11 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 
 func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
 	if glog.V(2) {
-		glog.Infof("Removing %s", req.Name)
+		glog.Infof("Removing %s %d", req.Name, len(req.Name))
+	}
+
+	if len(req.Name) > 255 {
+		return fuse.Errno(syscall.ENAMETOOLONG)
 	}
 
 	dir.Lock.Lock()
@@ -155,8 +167,13 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
 
 func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
 	if glog.V(2) {
-		glog.Infof("Creating file %s\n", req.Name)
+		glog.Infof("Creating file %s %d", req.Name, len(req.Name))
 	}
+
+	if len(req.Name) > 255 {
+		return nil, nil, fuse.Errno(syscall.ENAMETOOLONG)
+	}
+
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
