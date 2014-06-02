@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/anupcshan/gobuddyfs"
+	"github.com/buddyfs/gobuddyfs"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -9,7 +9,7 @@ import (
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 
-	"github.com/anupcshan/gobuddyfs"
+	"github.com/buddyfs/gobuddyfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
