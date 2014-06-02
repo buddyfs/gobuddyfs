@@ -178,7 +178,10 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 	}
 	for i := range file.Blocks {
 		if file.Blocks[i].IsDirty() {
-			file.Blocks[i].WriteBlock(file.getBlock(int64(i)), *file.Root.Store)
+			err := file.Blocks[i].WriteBlock(file.getBlock(int64(i)), *file.Root.Store)
+			if err != nil {
+				glog.Warning("Unable to write block %s due to error: %s", file.Blocks[i].Id, err)
+			}
 		}
 	}
 

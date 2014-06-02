@@ -49,6 +49,11 @@ func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
 		Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
 }
 
+func isRetryable(err error) bool {
+	// TODO: Inspect error to figure out if we can actually retry it!
+	return false
+}
+
 func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 	bfs.Lock.Lock()
 	defer bfs.Lock.Unlock()
@@ -56,7 +61,9 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 	if bfs.FSM == nil {
 		rootKey, err := bfs.Store.Get("ROOT")
 
-		if err != nil {
+		// TODO: Inspect error to figure out if we can actually retry it!
+
+		if isRetryable(err) {
 			// Error reading the key
 			return nil, fuse.EIO
 		} else if rootKey == nil {

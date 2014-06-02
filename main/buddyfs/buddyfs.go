@@ -6,11 +6,16 @@ import (
 	"log"
 	"os"
 	"runtime/pprof"
+	"time"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	"github.com/anupcshan/gobuddyfs"
+	"github.com/buddyfs/go-chord"
 )
+
+var PORT uint = 9000
+var TIMEOUT time.Duration = time.Duration(20 * time.Millisecond)
 
 var Usage = func() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
@@ -41,9 +46,15 @@ func main() {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 
-	memStore := gobuddyfs.NewMemStore()
+	// memStore := gobuddyfs.NewMemStore()
 
-	err = fs.Serve(c, gobuddyfs.NewBuddyFS(memStore))
+	var listen string = fmt.Sprintf("localhost:%d", PORT)
+	trans, _ := chord.InitTCPTransport(listen, TIMEOUT)
+	var conf *chord.Config = chord.DefaultConfig(listen)
+	r, _ := chord.Create(conf, trans)
+	kvStore := chord.NewKVStoreClient(r)
+
+	err = fs.Serve(c, gobuddyfs.NewBuddyFS(kvStore))
 	if err != nil {
 		log.Fatal(err)
 	}
