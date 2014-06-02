@@ -6,4 +6,4 @@ GoBuddyFS
 
 Fuse-based filesystem written in Golang which can use any key-value store as a backend.
 
-Intended to be used with a Chord-based P2P key-value store (DHT) as implemented in https://github.com/narendran/go-chord.
+Intended to be used with a Chord-based P2P key-value store (DHT) as implemented in https://github.com/buddyfs/buddystore.

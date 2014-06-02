@@ -10,8 +10,8 @@ import (
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
+	"github.com/buddyfs/buddystore"
 	"github.com/buddyfs/gobuddyfs"
-	"github.com/buddyfs/go-chord"
 )
 
 var PORT uint = 9000
