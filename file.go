@@ -176,8 +176,8 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 	if glog.V(2) {
 		glog.Infoln("FLUSH", file.Name, file.IsDirty())
 	}
-	for i := range file.Blocks {
-		if file.Blocks[i].IsDirty() {
+	for i := range file.BlockCache {
+		if file.BlockCache[i] != nil && file.BlockCache[i].IsDirty() {
 			err := file.Blocks[i].WriteBlock(file.getBlock(int64(i)), *file.Root.Store)
 			if err != nil {
 				glog.Warning("Unable to write block %s due to error: %s", file.Blocks[i].Id, err)
