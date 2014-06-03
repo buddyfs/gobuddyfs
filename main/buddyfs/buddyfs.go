@@ -46,7 +46,7 @@ func main() {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 
-	// memStore := gobuddyfs.NewMemStore()
+	// kvStore := gobuddyfs.NewMemStore()
 
 	var listen string = fmt.Sprintf("localhost:%d", PORT)
 	trans, _ := chord.InitTCPTransport(listen, TIMEOUT)

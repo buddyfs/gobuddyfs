@@ -51,6 +51,7 @@ func (file *File) appendBlock(dblk *DataBlock) {
 		glog.Infoln("AppendBlock: ", len(file.BlockCache))
 	}
 	file.BlockCache = append(file.BlockCache, dblk)
+	file.MarkDirty()
 }
 
 func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
@@ -178,9 +179,11 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 	}
 	for i := range file.BlockCache {
 		if file.BlockCache[i] != nil && file.BlockCache[i].IsDirty() {
-			err := file.Blocks[i].WriteBlock(file.getBlock(int64(i)), *file.Root.Store)
+			err := file.BlockCache[i].WriteBlock(file.BlockCache[i], *file.Root.Store)
 			if err != nil {
 				glog.Warning("Unable to write block %s due to error: %s", file.Blocks[i].Id, err)
+			} else {
+				file.BlockCache[i] = nil
 			}
 		}
 	}
