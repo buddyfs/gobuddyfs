@@ -49,10 +49,10 @@ func main() {
 	// kvStore := gobuddyfs.NewMemStore()
 
 	var listen string = fmt.Sprintf("localhost:%d", PORT)
-	trans, _ := chord.InitTCPTransport(listen, TIMEOUT)
-	var conf *chord.Config = chord.DefaultConfig(listen)
-	r, _ := chord.Create(conf, trans)
-	kvStore := chord.NewKVStoreClient(r)
+	trans, _ := buddystore.InitTCPTransport(listen, TIMEOUT)
+	var conf *buddystore.Config = buddystore.DefaultConfig(listen)
+	r, _ := buddystore.Create(conf, trans)
+	kvStore := buddystore.NewKVStoreClient(r)
 
 	err = fs.Serve(c, gobuddyfs.NewBuddyFS(kvStore))
 	if err != nil {
