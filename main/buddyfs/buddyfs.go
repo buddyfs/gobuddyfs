@@ -12,6 +12,7 @@ import (
 	"bazil.org/fuse/fs"
 	"github.com/buddyfs/buddystore"
 	"github.com/buddyfs/gobuddyfs"
+	"github.com/golang/glog"
 )
 
 var PORT uint = 9000
@@ -48,11 +49,21 @@ func main() {
 
 	// kvStore := gobuddyfs.NewMemStore()
 
-	var listen string = fmt.Sprintf("localhost:%d", PORT)
-	trans, _ := buddystore.InitTCPTransport(listen, TIMEOUT)
-	var conf *buddystore.Config = buddystore.DefaultConfig(listen)
-	r, _ := buddystore.Create(conf, trans)
-	kvStore := buddystore.NewKVStoreClient(r)
+	/*
+		var listen string = fmt.Sprintf("localhost:%d", PORT)
+		trans, _ := buddystore.InitTCPTransport(listen, TIMEOUT)
+		var conf *buddystore.Config = buddystore.DefaultConfig(listen)
+		r, _ := buddystore.Create(conf, trans)
+		kvStore := buddystore.NewKVStoreClient(r)
+	*/
+
+	config := &buddystore.BuddyStoreConfig{MyID: "foo"}
+	bStore := buddystore.NewBuddyStore(config)
+	kvStore, errno := bStore.GetMyKVClient()
+
+	if errno != buddystore.OK {
+		glog.Fatalf("Error getting KVClient instance from Buddystore. %d", errno)
+	}
 
 	err = fs.Serve(c, gobuddyfs.NewBuddyFS(kvStore))
 	if err != nil {
