@@ -4,7 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
+	"os/user"
 	"runtime/pprof"
 	"time"
 
@@ -25,6 +27,7 @@ var Usage = func() {
 }
 
 func main() {
+	rand.Seed(time.Now().UTC().UnixNano())
 	flag.Usage = Usage
 	flag.Parse()
 
@@ -57,7 +60,10 @@ func main() {
 		kvStore := buddystore.NewKVStoreClient(r)
 	*/
 
-	config := &buddystore.BuddyStoreConfig{MyID: "foo"}
+	// TODO: Replace OS username with PGP key
+	currentUser, _ := user.Current()
+	glog.Infof("Logging in as user: %s", currentUser.Name)
+	config := &buddystore.BuddyStoreConfig{MyID: currentUser.Name}
 	bStore := buddystore.NewBuddyStore(config)
 	kvStore, errno := bStore.GetMyKVClient()
 
