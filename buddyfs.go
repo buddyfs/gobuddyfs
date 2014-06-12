@@ -49,24 +49,14 @@ func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
 		Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
 }
 
-func isRetryable(err error) bool {
-	// TODO: Inspect error to figure out if we can actually retry it!
-	return false
-}
-
 func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 	bfs.Lock.Lock()
 	defer bfs.Lock.Unlock()
 
 	if bfs.FSM == nil {
-		rootKey, err := bfs.Store.Get("ROOT")
+		rootKey, err := bfs.Store.Get("ROOT", true)
 
-		// TODO: Inspect error to figure out if we can actually retry it!
-
-		if isRetryable(err) {
-			// Error reading the key
-			return nil, fuse.EIO
-		} else if rootKey == nil {
+		if rootKey == nil {
 			// Root key not found
 			root := bfs.CreateNewFSMetadata()
 			root.MarkDirty()
@@ -160,7 +150,7 @@ func (b *Block) WriteBlock(m Marshalable, store KVStore) error {
 }
 
 func (b *Block) ReadBlock(m interface{}, store KVStore) error {
-	encoded, err := store.Get(strconv.FormatInt(b.Id, 10))
+	encoded, err := store.Get(strconv.FormatInt(b.Id, 10), false)
 	if err != nil {
 		return err
 	}

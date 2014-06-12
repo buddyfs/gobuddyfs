@@ -19,7 +19,7 @@ func NewMemStore() *MemStore {
 	return &MemStore{store: make(map[string][]byte), lock: &sync.RWMutex{}}
 }
 
-func (self *MemStore) Get(key string) ([]byte, error) {
+func (self *MemStore) Get(key string, retry bool) ([]byte, error) {
 	if glog.V(2) {
 		glog.Infof("Get(%s)\n", key)
 	}

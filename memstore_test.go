@@ -15,7 +15,7 @@ func TestGetSet(t *testing.T) {
 	bar := []byte("bar")
 	s.Set("Foo", bar)
 
-	r, err := s.Get("Foo")
+	r, err := s.Get("Foo", false)
 
 	assert.NoError(t, err)
 	assert.Equal(t, bar, r)
@@ -33,7 +33,7 @@ func TestParallelGetSet(t *testing.T) {
 	dones := make([]chan bool, parallelism)
 
 	getter := func(res *[]byte, err *error, done chan bool) {
-		*res, *err = s.Get("Foo")
+		*res, *err = s.Get("Foo", false)
 		done <- true
 	}
 

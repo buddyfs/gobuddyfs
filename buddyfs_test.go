@@ -19,8 +19,8 @@ type MockKVStore struct {
 	gobuddyfs.KVStore
 }
 
-func (m *MockKVStore) Get(key string) ([]byte, error) {
-	args := m.Mock.Called(key)
+func (m *MockKVStore) Get(key string, retry bool) ([]byte, error) {
+	args := m.Mock.Called(key, retry)
 	bytes, ok := args.Get(0).([]byte)
 	if !ok {
 		return nil, args.Error(1)
@@ -52,7 +52,7 @@ func TestRootGetNodeError(t *testing.T) {
 func TestRootCreateSuccess(t *testing.T) {
 	mkv := new(MockKVStore)
 	bfs := gobuddyfs.NewBuddyFS(mkv)
-	mkv.On("Get", "ROOT").Return(nil, nil).Once()
+	mkv.On("Get", "ROOT", true).Return(nil, nil).Once()
 	mkv.On("Set", mock.Anything, mock.Anything).Return(nil).Twice()
 	node, err := bfs.Root()
 
@@ -66,7 +66,7 @@ func TestRootCreateSuccess(t *testing.T) {
 func TestRootCreateAndReadRoot(t *testing.T) {
 	mkv := new(MockKVStore)
 	bfs := gobuddyfs.NewBuddyFS(mkv)
-	mkv.On("Get", "ROOT").Return(nil, nil).Once()
+	mkv.On("Get", "ROOT", true).Return(nil, nil).Once()
 	mkv.On("Set", mock.Anything, mock.Anything).Return(nil).Twice()
 	node, err := bfs.Root()
 
@@ -87,7 +87,7 @@ func TestRootCreateAndReadRoot(t *testing.T) {
 func TestRootCreateWriteNodeFail(t *testing.T) {
 	mkv := new(MockKVStore)
 	bfs := gobuddyfs.NewBuddyFS(mkv)
-	mkv.On("Get", "ROOT").Return(nil, nil).Once()
+	mkv.On("Get", "ROOT", true).Return(nil, nil).Once()
 	mkv.On("Set", mock.Anything, mock.Anything).Return(fmt.Errorf("Writing root node failed")).Once()
 	node, err := bfs.Root()
 
@@ -100,7 +100,7 @@ func TestRootCreateWriteNodeFail(t *testing.T) {
 func TestRootCreateWriteROOTKeyFail(t *testing.T) {
 	mkv := new(MockKVStore)
 	bfs := gobuddyfs.NewBuddyFS(mkv)
-	mkv.On("Get", "ROOT").Return(nil, nil).Once()
+	mkv.On("Get", "ROOT", true).Return(nil, nil).Once()
 	mkv.On("Set", mock.Anything, mock.Anything).Return(nil).Once()
 	mkv.On("Set", mock.Anything, mock.Anything).Return(fmt.Errorf("Writing ROOT key failed")).Once()
 	node, err := bfs.Root()
@@ -117,7 +117,7 @@ func TestRootReadCorruptedExistingRootKey(t *testing.T) {
 
 	buffer := []byte{255, 255, 255}
 
-	mkv.On("Get", "ROOT").Return(buffer, nil).Once()
+	mkv.On("Get", "ROOT", true).Return(buffer, nil).Once()
 	node, err := bfs.Root()
 
 	assert.Error(t, err)
@@ -134,8 +134,8 @@ func TestRootReadCorruptedExistingRootNode(t *testing.T) {
 	id := int64(1000)
 	binary.PutVarint(buffer, id)
 
-	mkv.On("Get", "ROOT").Return(buffer, nil).Once()
-	mkv.On("Get", "1000").Return(buffer, nil).Once()
+	mkv.On("Get", "ROOT", true).Return(buffer, nil).Once()
+	mkv.On("Get", "1000", false).Return(buffer, nil).Once()
 	node, err := bfs.Root()
 
 	assert.Error(t, err)
@@ -154,8 +154,8 @@ func TestRootReadExistingRoot(t *testing.T) {
 
 	jsonDir := "{\"name\": \"x\", \"Inode\": 1, \"Id\": 2000}"
 
-	mkv.On("Get", "ROOT").Return(buffer, nil).Once()
-	mkv.On("Get", "2000").Return([]byte(jsonDir), nil).Once()
+	mkv.On("Get", "ROOT", true).Return(buffer, nil).Once()
+	mkv.On("Get", "2000", false).Return([]byte(jsonDir), nil).Once()
 	node, err := bfs.Root()
 
 	assert.NoError(t, err)
@@ -175,8 +175,8 @@ func TestRootReReadExistingRoot(t *testing.T) {
 
 	jsonDir := "{\"NextInode\": 2, \"name\": \"x\", \"Inode\": 1, \"Id\": 3000}"
 
-	mkv.On("Get", "ROOT").Return(buffer, nil).Once()
-	mkv.On("Get", "2000").Return([]byte(jsonDir), nil).Once()
+	mkv.On("Get", "ROOT", true).Return(buffer, nil).Once()
+	mkv.On("Get", "2000", false).Return([]byte(jsonDir), nil).Once()
 	node, err := bfs.Root()
 
 	assert.NoError(t, err)
