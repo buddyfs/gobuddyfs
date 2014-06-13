@@ -3,6 +3,7 @@ package gobuddyfs
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -52,6 +53,8 @@ func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
 func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 	bfs.Lock.Lock()
 	defer bfs.Lock.Unlock()
+
+	fmt.Println("READING ROOT!!!")
 
 	if bfs.FSM == nil {
 		rootKey, err := bfs.Store.Get("ROOT", true)
@@ -150,7 +153,7 @@ func (b *Block) WriteBlock(m Marshalable, store KVStore) error {
 }
 
 func (b *Block) ReadBlock(m interface{}, store KVStore) error {
-	encoded, err := store.Get(strconv.FormatInt(b.Id, 10), false)
+	encoded, err := store.Get(strconv.FormatInt(b.Id, 10), true)
 	if err != nil {
 		return err
 	}
