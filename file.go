@@ -16,6 +16,17 @@ type File struct {
 	Blocks     []Block
 	Root       *FSMeta      `json:"-"`
 	BlockCache []*DataBlock `json:"-"`
+	BFS        *BuddyFS     `json:"-"`
+}
+
+func (file *File) SafeRoot() *FSMeta {
+	if file.Root != nil {
+		return file.Root
+	}
+	rt, _ := file.BFS.Root()
+
+	file.Root, _ = rt.(*FSMeta)
+	return file.Root
 }
 
 func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
@@ -34,7 +45,7 @@ func (file *File) getBlock(index int64) *DataBlock {
 	if file.BlockCache[index] == nil {
 		var startBlock DataBlock
 		startBlock.Block.Id = file.Blocks[index].Id
-		err := startBlock.ReadBlock(&startBlock, *file.Root.Store)
+		err := startBlock.ReadBlock(&startBlock, *file.SafeRoot().Store)
 		if err != nil {
 			glog.Errorf("Error while reading data block: %q", err)
 			return nil
@@ -81,7 +92,7 @@ func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, i
 		}
 		file.Size = req.Size
 
-		err := file.WriteBlock(file, *file.Root.Store)
+		err := file.WriteBlock(file, *file.SafeRoot().Store)
 		if err != nil {
 			return fuse.EIO
 		}
@@ -179,7 +190,7 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 	}
 	for i := range file.BlockCache {
 		if file.BlockCache[i] != nil && file.BlockCache[i].IsDirty() {
-			err := file.BlockCache[i].WriteBlock(file.BlockCache[i], *file.Root.Store)
+			err := file.BlockCache[i].WriteBlock(file.BlockCache[i], *file.SafeRoot().Store)
 			if err != nil {
 				glog.Warning("Unable to write block %s due to error: %s", file.Blocks[i].Id, err)
 			} else {
@@ -189,7 +200,7 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 	}
 
 	if file.IsDirty() {
-		file.WriteBlock(file, *file.Root.Store)
+		file.WriteBlock(file, *file.SafeRoot().Store)
 	}
 	return nil
 }
