@@ -135,7 +135,7 @@ func TestRootReadCorruptedExistingRootNode(t *testing.T) {
 	binary.PutVarint(buffer, id)
 
 	mkv.On("Get", "ROOT", true).Return(buffer, nil).Once()
-	mkv.On("Get", "1000", false).Return(buffer, nil).Once()
+	mkv.On("Get", "1000", true).Return(buffer, nil).Once()
 	node, err := bfs.Root()
 
 	assert.Error(t, err)
@@ -155,7 +155,7 @@ func TestRootReadExistingRoot(t *testing.T) {
 	jsonDir := "{\"name\": \"x\", \"Inode\": 1, \"Id\": 2000}"
 
 	mkv.On("Get", "ROOT", true).Return(buffer, nil).Once()
-	mkv.On("Get", "2000", false).Return([]byte(jsonDir), nil).Once()
+	mkv.On("Get", "2000", true).Return([]byte(jsonDir), nil).Once()
 	node, err := bfs.Root()
 
 	assert.NoError(t, err)
@@ -176,7 +176,7 @@ func TestRootReReadExistingRoot(t *testing.T) {
 	jsonDir := "{\"NextInode\": 2, \"name\": \"x\", \"Inode\": 1, \"Id\": 3000}"
 
 	mkv.On("Get", "ROOT", true).Return(buffer, nil).Once()
-	mkv.On("Get", "2000", false).Return([]byte(jsonDir), nil).Once()
+	mkv.On("Get", "2000", true).Return([]byte(jsonDir), nil).Once()
 	node, err := bfs.Root()
 
 	assert.NoError(t, err)
