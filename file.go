@@ -37,7 +37,9 @@ func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.In
 }
 
 func (file *File) getBlock(index int64) *DataBlock {
-	glog.Infoln("GetBlock: ", index)
+	if glog.V(2) {
+		glog.Infoln("GetBlock: ", index)
+	}
 
 	if uint64(index) >= blkCount(file.Size, BLOCK_SIZE) {
 		return nil
@@ -84,17 +86,23 @@ func (file *File) setSize(size uint64) fuse.Error {
 	newBlockCount := blkCount(size, BLOCK_SIZE)
 
 	if newBlockCount < uint64(len(file.Blocks)) {
-		glog.Infoln("Reducing number of blocks to", newBlockCount)
+		if glog.V(2) {
+			glog.Infoln("Reducing number of blocks to", newBlockCount)
+		}
 		blocksToDelete := file.Blocks[newBlockCount:]
 		file.Blocks = file.Blocks[:newBlockCount]
 		file.BlockCache = file.BlockCache[:newBlockCount]
 
 		for blk := range blocksToDelete {
 			// TODO: Actually call delete on the backing store
-			glog.Warningln("Removing ", blocksToDelete[blk].Id)
+			if glog.V(2) {
+				glog.Warningln("Removing ", blocksToDelete[blk].Id)
+			}
 		}
 	} else if newBlockCount > uint64(len(file.Blocks)) {
-		glog.Infoln("Increasing number of blocks to", newBlockCount)
+		if glog.V(2) {
+			glog.Infoln("Increasing number of blocks to", newBlockCount)
+		}
 		for uint64(len(file.Blocks)) < newBlockCount {
 			blk := Block{Id: rand.Int63()}
 			dBlk := DataBlock{Block: blk, Data: []byte{}}

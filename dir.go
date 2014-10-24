@@ -58,7 +58,6 @@ func (dir *Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 }
 
 func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, fuse.Error) {
-	glog.Infoln("Lookup", dir.Name)
 	for dirId := range dir.Dirs {
 		if dir.Dirs[dirId].Name == name {
 			var dirDir Dir
