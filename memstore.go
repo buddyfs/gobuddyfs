@@ -4,8 +4,6 @@ import (
 	"sync"
 
 	"github.com/golang/glog"
-
-	// "github.com/golang/glog"
 )
 
 type MemStore struct {

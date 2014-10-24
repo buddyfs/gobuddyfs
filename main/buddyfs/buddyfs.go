@@ -17,6 +17,9 @@ import (
 	"github.com/golang/glog"
 )
 
+var useMemStore = flag.Bool("useMemStore", false,
+	"Use in-memory KV store instead of buddystore")
+
 var PORT uint = 9000
 var TIMEOUT time.Duration = time.Duration(20 * time.Millisecond)
 
@@ -24,6 +27,28 @@ var Usage = func() {
 	fmt.Fprintf(os.Stderr, "Usage of %s:\n", os.Args[0])
 	fmt.Fprintf(os.Stderr, "  %s MOUNTPOINT\n", os.Args[0])
 	flag.PrintDefaults()
+}
+
+func getBuddyStoreClient() gobuddyfs.KVStore {
+	// TODO: Replace OS username with PGP key
+	currentUser, _ := user.Current()
+	glog.Infof("Logging in as user: %s", currentUser.Name)
+	config := &buddystore.BuddyStoreConfig{MyID: currentUser.Name}
+	bStore := buddystore.NewBuddyStore(config)
+	kvStore, errno := bStore.GetMyKVClient()
+
+	if errno != buddystore.OK {
+		// If there is an error instantiating the KV client, not much to do.
+		// Spit out an error and die.
+		glog.Fatalf("Error getting KVClient instance from Buddystore. %d", errno)
+		os.Exit(1)
+	}
+
+	return kvStore
+}
+
+func getInMemoryKVStoreClient() gobuddyfs.KVStore {
+	return gobuddyfs.NewMemStore()
 }
 
 func main() {
@@ -50,25 +75,12 @@ func main() {
 	pprof.StartCPUProfile(f)
 	defer pprof.StopCPUProfile()
 
-	// kvStore := gobuddyfs.NewMemStore()
+	var kvStore gobuddyfs.KVStore
 
-	/*
-		var listen string = fmt.Sprintf("localhost:%d", PORT)
-		trans, _ := buddystore.InitTCPTransport(listen, TIMEOUT)
-		var conf *buddystore.Config = buddystore.DefaultConfig(listen)
-		r, _ := buddystore.Create(conf, trans)
-		kvStore := buddystore.NewKVStoreClient(r)
-	*/
-
-	// TODO: Replace OS username with PGP key
-	currentUser, _ := user.Current()
-	glog.Infof("Logging in as user: %s", currentUser.Name)
-	config := &buddystore.BuddyStoreConfig{MyID: currentUser.Name}
-	bStore := buddystore.NewBuddyStore(config)
-	kvStore, errno := bStore.GetMyKVClient()
-
-	if errno != buddystore.OK {
-		glog.Fatalf("Error getting KVClient instance from Buddystore. %d", errno)
+	if *useMemStore {
+		kvStore = getInMemoryKVStoreClient()
+	} else {
+		kvStore = getBuddyStoreClient()
 	}
 
 	err = fs.Serve(c, gobuddyfs.NewBuddyFS(kvStore))
