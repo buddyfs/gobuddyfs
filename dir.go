@@ -46,7 +46,7 @@ func (dir *Dir) Forget() {
 }
 
 func (dir Dir) Attr() fuse.Attr {
-	return fuse.Attr{Mode: os.ModeDir | 0555}
+	return fuse.Attr{Mode: os.ModeDir | 0555, Inode: uint64(dir.Id)}
 }
 
 func (dir *Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
@@ -58,6 +58,7 @@ func (dir *Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
 }
 
 func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, fuse.Error) {
+	glog.Infoln("Lookup", dir.Name)
 	for dirId := range dir.Dirs {
 		if dir.Dirs[dirId].Name == name {
 			var dirDir Dir
@@ -69,7 +70,8 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, f
 				return true, dirId, nil, fuse.EIO
 			}
 
-			return true, dirId, dirDir, nil
+			dirDir.Root = dir.SafeRoot()
+			return true, dirId, &dirDir, nil
 		}
 	}
 
@@ -84,7 +86,8 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, f
 				return false, fileId, nil, fuse.EIO
 			}
 
-			return false, fileId, file, nil
+			file.Root = dir.SafeRoot()
+			return false, fileId, &file, nil
 		}
 	}
 

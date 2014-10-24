@@ -12,8 +12,8 @@ import (
 // File implements both Node and Handle for the hello file.
 type File struct {
 	Block
-	Size       uint64
 	Blocks     []Block
+	Size       uint64
 	Root       *FSMeta      `json:"-"`
 	BlockCache []*DataBlock `json:"-"`
 	BFS        *BuddyFS     `json:"-"`
@@ -38,8 +38,17 @@ func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.In
 
 func (file *File) getBlock(index int64) *DataBlock {
 	glog.Infoln("GetBlock: ", index)
-	if int(index) > len(file.BlockCache) {
+
+	if uint64(index) >= blkCount(file.Size, BLOCK_SIZE) {
 		return nil
+	}
+
+	// TODO: This step is incredibly wasteful, especially for large files.
+	// Switch to using a map with size bounds here. Alternately, use a global
+	// cache with a simple list of dirty blockids stored here.
+	for int64(len(file.BlockCache)) <= index {
+		glog.Infoln("Adding empty entries in block cache")
+		file.BlockCache = append(file.BlockCache, nil)
 	}
 
 	if file.BlockCache[index] == nil {
@@ -65,50 +74,72 @@ func (file *File) appendBlock(dblk *DataBlock) {
 	file.MarkDirty()
 }
 
+func blkCount(size uint64, BLK_SIZE uint64) uint64 {
+	return (size + BLK_SIZE - 1) / BLK_SIZE
+}
+
+// TODO: Should the return type be a standard error instead?
+// TODO: Unit tests!
+func (file *File) setSize(size uint64) fuse.Error {
+	newBlockCount := blkCount(size, BLOCK_SIZE)
+
+	if newBlockCount < uint64(len(file.Blocks)) {
+		glog.Infoln("Reducing number of blocks to", newBlockCount)
+		blocksToDelete := file.Blocks[newBlockCount:]
+		file.Blocks = file.Blocks[:newBlockCount]
+		file.BlockCache = file.BlockCache[:newBlockCount]
+
+		for blk := range blocksToDelete {
+			// TODO: Actually call delete on the backing store
+			glog.Warningln("Removing ", blocksToDelete[blk].Id)
+		}
+	} else if newBlockCount > uint64(len(file.Blocks)) {
+		glog.Infoln("Increasing number of blocks to", newBlockCount)
+		for uint64(len(file.Blocks)) < newBlockCount {
+			blk := Block{Id: rand.Int63()}
+			dBlk := DataBlock{Block: blk, Data: []byte{}}
+			dBlk.MarkDirty()
+
+			file.Blocks = append(file.Blocks, blk)
+			file.appendBlock(&dBlk)
+		}
+	}
+
+	// Else, the file size change did not change the number of blocks.
+	// Essentially, the change was limited to the last block. In this case, we
+	// simply change the size attribute and proceed.
+
+	file.Size = size
+	file.MarkDirty()
+
+	return nil
+}
+
 func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
 	if glog.V(2) {
 		glog.Infoln("Setattr called")
 		glog.Infoln("Req: ", req)
 	}
 
+	metaChanges := false
 	valid := req.Valid
 	if valid.Size() && req.Size != file.Size {
-		// Resizing!
-		if file.Size > req.Size {
-			glog.Infoln("Shrinking")
-			numBlocks := req.Size / BLOCK_SIZE
+		file.setSize(req.Size)
+		metaChanges = true
+	}
 
-			if numBlocks < uint64(len(file.Blocks)) {
-				blocksToDelete := file.Blocks[numBlocks:]
-				file.Blocks = file.Blocks[:numBlocks]
-				file.BlockCache = file.BlockCache[:numBlocks]
-
-				for blk := range blocksToDelete {
-					glog.Warningln("Removing ", blocksToDelete[blk].Id)
-				}
-			}
-		} else {
-			glog.Warningln("TODO: Expanding")
-		}
-		file.Size = req.Size
-
-		err := file.WriteBlock(file, *file.SafeRoot().Store)
-		if err != nil {
-			return fuse.EIO
-		}
-
-		if glog.V(2) {
-			glog.Infoln("Resizing file to size", file.Size)
-		}
+	if res.Attr != file.Attr() {
 		res.Attr = file.Attr()
-		return nil
+		metaChanges = true
 	}
 
-	res.Attr = file.Attr()
-	if glog.V(2) {
-		glog.Infoln("Finished Setattr")
+	// TODO: Handle or ignore metadata changes like uid/gid/timestamps.
+
+	if metaChanges {
+		// There are metadata changes to the file, write back before proceeding.
+		return file.Flush(nil, intr)
 	}
-	// TODO: Not implemented.
+
 	return nil
 }
 
@@ -117,16 +148,13 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 	if glog.V(2) {
 		glog.Infof("Writing %d byte(s) at offset %d", dataBytes, req.Offset)
 	}
-	for req.Offset+int64(dataBytes) >= int64(BLOCK_SIZE*len(file.Blocks)) {
-		blk := Block{Id: rand.Int63()}
-		dBlk := DataBlock{Block: blk, Data: []byte{}}
-		dBlk.MarkDirty()
 
-		file.Blocks = append(file.Blocks, blk)
-		file.appendBlock(&dBlk)
-		file.MarkDirty()
+	// In case we write past current EOF, expand the file.
+	if uint64(req.Offset)+uint64(dataBytes) > file.Size {
+		file.setSize(uint64(req.Offset) + uint64(dataBytes))
 	}
 
+	// TODO: Write currently only updates one block worth of data.
 	startBlockId := req.Offset / BLOCK_SIZE
 
 	var startBlock *DataBlock = file.getBlock(startBlockId)
@@ -135,7 +163,6 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 		glog.Infof("Block content length: %d", len(startBlock.Data))
 	}
 
-	oldLen := len(startBlock.Data)
 	bytesToAdd := min(BLOCK_SIZE-int(req.Offset%BLOCK_SIZE), dataBytes)
 	data := append(startBlock.Data[:(req.Offset%BLOCK_SIZE)], req.Data[:bytesToAdd]...)
 	if len(startBlock.Data) >= int(req.Offset%BLOCK_SIZE)+bytesToAdd {
@@ -154,8 +181,6 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 	}
 
 	res.Size = bytesToAdd
-	file.Size = file.Size + uint64(len(startBlock.Data)) - uint64(oldLen)
-
 	file.MarkDirty()
 	return nil
 }
@@ -166,9 +191,11 @@ func (file *File) Marshal() ([]byte, error) {
 
 func (file File) Attr() fuse.Attr {
 	if glog.V(2) {
-		glog.Infoln("Attr called")
+		glog.Infoln("Attr called", file.Name)
 	}
-	return fuse.Attr{Mode: 0444, Blocks: uint64(len(file.Blocks)), Size: file.Size}
+
+	return fuse.Attr{Mode: 0444, Inode: uint64(file.Id),
+		Blocks: uint64(len(file.Blocks)), Size: file.Size}
 }
 
 func (file *File) Release(req *fuse.ReleaseRequest, intr fs.Intr) fuse.Error {
