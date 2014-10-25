@@ -113,8 +113,7 @@ type Marshalable interface {
 }
 
 type Block struct {
-	Name string
-	// TODO: Can inode number be used as Id?
+	Name  string
 	Id    int64
 	dirty bool `json:"-"`
 }
@@ -131,6 +130,10 @@ func (dBlock DataBlock) Marshal() ([]byte, error) {
 func (dBlock *DataBlock) Unmarshal(data []byte) error {
 	dBlock.Data = data
 	return nil
+}
+
+func (b *Block) Delete(store KVStore) {
+	store.Set(strconv.FormatInt(b.Id, 10), nil)
 }
 
 func (b *Block) MarkDirty() {

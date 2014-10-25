@@ -104,6 +104,7 @@ func (file *File) setSize(size uint64) fuse.Error {
 			// TODO: Actually call delete on the backing store
 			if glog.V(2) {
 				glog.Warningln("Removing ", blocksToDelete[blk].Id)
+				blocksToDelete[blk].Delete(*file.SafeRoot().Store)
 			}
 		}
 	} else if newBlockCount > uint64(len(file.Blocks)) {

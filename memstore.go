@@ -39,7 +39,12 @@ func (self *MemStore) Set(key string, value []byte) error {
 	self.lock.Lock()
 	defer self.lock.Unlock()
 
-	self.store[key] = value
+	if value == nil {
+		// Implicit delete operation
+		delete(self.store, key)
+	} else {
+		self.store[key] = value
+	}
 
 	return nil
 }
