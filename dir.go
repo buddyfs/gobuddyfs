@@ -156,7 +156,7 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
 
 		return nil
 	} else {
-		dirDir, ok := node.(Dir)
+		dirDir, ok := node.(*Dir)
 		if !ok {
 			return fuse.EIO
 		}
