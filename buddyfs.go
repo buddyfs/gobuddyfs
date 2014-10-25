@@ -39,6 +39,10 @@ func (fsm FSMeta) Marshal() ([]byte, error) {
 	return json.Marshal(fsm)
 }
 
+func (fsm *FSMeta) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, fsm)
+}
+
 func NewBuddyFS(store KVStore) *BuddyFS {
 	bfs := &BuddyFS{Store: store, Lock: sync.Mutex{}}
 	return bfs
@@ -105,6 +109,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 
 type Marshalable interface {
 	Marshal() ([]byte, error)
+	Unmarshal([]byte) error
 }
 
 type Block struct {
@@ -120,7 +125,12 @@ type DataBlock struct {
 }
 
 func (dBlock DataBlock) Marshal() ([]byte, error) {
-	return json.Marshal(dBlock)
+	return dBlock.Data, nil
+}
+
+func (dBlock *DataBlock) Unmarshal(data []byte) error {
+	dBlock.Data = data
+	return nil
 }
 
 func (b *Block) MarkDirty() {
@@ -149,13 +159,13 @@ func (b *Block) WriteBlock(m Marshalable, store KVStore) error {
 	return err
 }
 
-func (b *Block) ReadBlock(m interface{}, store KVStore) error {
+func (b *Block) ReadBlock(m Marshalable, store KVStore) error {
 	encoded, err := store.Get(strconv.FormatInt(b.Id, 10), true)
 	if err != nil {
 		return err
 	}
 
-	err = json.Unmarshal(encoded, m)
+	err = m.Unmarshal(encoded)
 
 	if err != nil {
 		return err

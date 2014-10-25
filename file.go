@@ -9,7 +9,14 @@ import (
 	"github.com/golang/glog"
 )
 
-// File implements both Node and Handle for the hello file.
+// TODO: Determine a mechanism to spill over metadata chunks into more block(s).
+// For files which are very large, encoded form of "Blocks" may not fit within a
+// data block.
+//
+// Currently, we do not consider this case at all. With a 4KB block size,
+// and block list entries being approx 10 bytes long (Block contains a name
+// field which is not always relevant), a File metadata block can contain ~408
+// block entries, totalling ~1.62MB. With 32K blocks, we can get 102MB. So, this
 type File struct {
 	Block
 	Blocks     []Block
@@ -195,6 +202,10 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 
 func (file *File) Marshal() ([]byte, error) {
 	return json.Marshal(file)
+}
+
+func (file *File) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, file)
 }
 
 func (file File) Attr() fuse.Attr {

@@ -39,6 +39,10 @@ func (dir *Dir) Marshal() ([]byte, error) {
 	return json.Marshal(dir)
 }
 
+func (dir *Dir) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, dir)
+}
+
 func (dir *Dir) Forget() {
 	if glog.V(2) {
 		glog.Infoln("FORGET", dir.Name)
