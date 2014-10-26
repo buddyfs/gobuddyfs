@@ -31,7 +31,6 @@ type BuddyFS struct {
 }
 
 type FSMeta struct {
-	Store *KVStore `json:"-"`
 	Dir
 }
 
@@ -71,8 +70,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 				err = bfs.Store.Set("ROOT", buffer)
 				if err == nil {
 					bfs.FSM = root
-					bfs.FSM.Root = bfs.FSM
-					bfs.FSM.Store = &bfs.Store
+					bfs.FSM.KVS = bfs.Store
 					return bfs.FSM, nil
 				} else {
 					glog.Errorf("Error while creating ROOT key: %q", err)
@@ -99,8 +97,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 		}
 
 		bfs.FSM = &root
-		bfs.FSM.Root = bfs.FSM
-		bfs.FSM.Store = &bfs.Store
+		bfs.FSM.KVS = bfs.Store
 		return bfs.FSM, nil
 	}
 

@@ -19,20 +19,10 @@ type Dir struct {
 	Files []Block
 	Lock  sync.RWMutex `json:"-"`
 	store KVStore      `json:"-"`
-	Root  *FSMeta      `json:"-"`
 	BFS   *BuddyFS     `json:"-"`
+	KVS   KVStore      `json:"-"`
 	Block
 	fs.Node
-}
-
-func (dir *Dir) SafeRoot() *FSMeta {
-	if dir.Root != nil {
-		return dir.Root
-	}
-	rt, _ := dir.BFS.Root()
-
-	dir.Root, _ = rt.(*FSMeta)
-	return dir.Root
 }
 
 func (dir *Dir) Marshal() ([]byte, error) {
@@ -67,13 +57,13 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, f
 			var dirDir Dir
 			dirDir.Id = dir.Dirs[dirId].Id
 
-			err := dirDir.ReadBlock(&dirDir, *dir.SafeRoot().Store)
+			err := dirDir.ReadBlock(&dirDir, dir.KVS)
 			if err != nil {
 				glog.Errorf("Error while read dir block: %q", err)
 				return true, dirId, nil, fuse.EIO
 			}
 
-			dirDir.Root = dir.SafeRoot()
+			dirDir.KVS = dir.KVS
 			return true, dirId, &dirDir, nil
 		}
 	}
@@ -83,13 +73,13 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, f
 			var file File
 			file.Block.Id = dir.Files[fileId].Id
 
-			err := file.ReadBlock(&file, *dir.SafeRoot().Store)
+			err := file.ReadBlock(&file, dir.KVS)
 			if err != nil {
 				glog.Errorf("Error while read file block: %q", err)
 				return false, fileId, nil, fuse.EIO
 			}
 
-			file.Root = dir.SafeRoot()
+			file.KVS = dir.KVS
 			return false, fileId, &file, nil
 		}
 	}
@@ -116,16 +106,16 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 
 	blk := Block{Name: req.Name, Id: rand.Int63()}
 
-	newDir := &Dir{Block: blk, Root: dir.SafeRoot(), Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
+	newDir := &Dir{Block: blk, KVS: dir.KVS, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
 	newDir.MarkDirty()
-	err = newDir.WriteBlock(newDir, *dir.SafeRoot().Store)
+	err = newDir.WriteBlock(newDir, dir.KVS)
 	if err != nil {
 		return nil, fuse.EIO
 	}
 
 	dir.Dirs = append(dir.Dirs, blk)
 	dir.MarkDirty()
-	dir.WriteBlock(dir, *dir.SafeRoot().Store)
+	dir.WriteBlock(dir, dir.KVS)
 	if err != nil {
 		return nil, fuse.EIO
 	}
@@ -153,7 +143,7 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
 	if !isDir {
 		dir.Files = append(dir.Files[:posn], dir.Files[posn+1:]...)
 		dir.MarkDirty()
-		dir.WriteBlock(dir, *dir.SafeRoot().Store)
+		dir.WriteBlock(dir, dir.KVS)
 		if err != nil {
 			return fuse.EIO
 		}
@@ -171,7 +161,7 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
 
 		dir.Dirs = append(dir.Dirs[:posn], dir.Dirs[posn+1:]...)
 		dir.MarkDirty()
-		dir.WriteBlock(dir, *dir.SafeRoot().Store)
+		dir.WriteBlock(dir, dir.KVS)
 		if err != nil {
 			return fuse.EIO
 		}
@@ -201,16 +191,16 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 
 	blk := Block{Name: req.Name, Id: rand.Int63()}
 
-	newFile := &File{Block: blk, Blocks: []Block{}, Root: dir.SafeRoot()}
+	newFile := &File{Block: blk, Blocks: []Block{}, KVS: dir.KVS}
 	newFile.MarkDirty()
-	err = newFile.WriteBlock(newFile, *dir.SafeRoot().Store)
+	err = newFile.WriteBlock(newFile, dir.KVS)
 	if err != nil {
 		return nil, nil, fuse.EIO
 	}
 
 	dir.Files = append(dir.Files, blk)
 	dir.MarkDirty()
-	dir.WriteBlock(dir, *dir.SafeRoot().Store)
+	dir.WriteBlock(dir, dir.KVS)
 	if err != nil {
 		return nil, nil, fuse.EIO
 	}
