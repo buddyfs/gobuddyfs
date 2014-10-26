@@ -21,9 +21,9 @@ type File struct {
 	Block
 	Blocks     []Block
 	Size       uint64
-	Root       *FSMeta      `json:"-"`
-	BlockCache []*DataBlock `json:"-"`
-	BFS        *BuddyFS     `json:"-"`
+	Root       *FSMeta              `json:"-"`
+	BlockCache map[int64]*DataBlock `json:"-"`
+	BFS        *BuddyFS             `json:"-"`
 }
 
 func (file *File) SafeRoot() *FSMeta {
@@ -52,34 +52,37 @@ func (file *File) getBlock(index int64) *DataBlock {
 		return nil
 	}
 
-	// TODO: This step is incredibly wasteful, especially for large files.
-	// Switch to using a map with size bounds here. Alternately, use a global
-	// cache with a simple list of dirty blockids stored here.
-	for int64(len(file.BlockCache)) <= index {
-		glog.Infoln("Adding empty entries in block cache")
-		file.BlockCache = append(file.BlockCache, nil)
+	if file.BlockCache == nil {
+		file.BlockCache = make(map[int64]*DataBlock)
 	}
 
-	if file.BlockCache[index] == nil {
+	blkId := file.Blocks[index].Id
+
+	if file.BlockCache[blkId] == nil {
 		var startBlock DataBlock
-		startBlock.Block.Id = file.Blocks[index].Id
+		startBlock.Block.Id = blkId
 		err := startBlock.ReadBlock(&startBlock, *file.SafeRoot().Store)
 		if err != nil {
 			glog.Errorf("Error while reading data block: %q", err)
 			return nil
 		}
 
-		file.BlockCache[index] = &startBlock
+		file.BlockCache[blkId] = &startBlock
 	}
 
-	return file.BlockCache[index]
+	return file.BlockCache[blkId]
 }
 
 func (file *File) appendBlock(dblk *DataBlock) {
 	if glog.V(2) {
 		glog.Infoln("AppendBlock: ", len(file.BlockCache))
 	}
-	file.BlockCache = append(file.BlockCache, dblk)
+
+	if file.BlockCache == nil {
+		file.BlockCache = make(map[int64]*DataBlock)
+	}
+
+	file.BlockCache[dblk.Id] = dblk
 	file.MarkDirty()
 }
 
@@ -98,12 +101,12 @@ func (file *File) setSize(size uint64) fuse.Error {
 		}
 		blocksToDelete := file.Blocks[newBlockCount:]
 		file.Blocks = file.Blocks[:newBlockCount]
-		file.BlockCache = file.BlockCache[:newBlockCount]
 
 		for blk := range blocksToDelete {
 			// TODO: Actually call delete on the backing store
 			if glog.V(2) {
 				glog.Warningln("Removing ", blocksToDelete[blk].Id)
+				delete(file.BlockCache, blocksToDelete[blk].Id)
 				blocksToDelete[blk].Delete(*file.SafeRoot().Store)
 			}
 		}
