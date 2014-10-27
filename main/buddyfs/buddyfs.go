@@ -10,15 +10,18 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"bytes"
+
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	"github.com/buddyfs/buddystore"
 	"github.com/buddyfs/gobuddyfs"
 	"github.com/golang/glog"
+	"github.com/steveyen/gkvlite"
 )
 
-var useMemStore = flag.Bool("useMemStore", false,
-	"Use in-memory KV store instead of buddystore")
+var storeType = flag.String("store", "p2p",
+	"Type of backing store for filesystem. Options: mem|gkv|p2p")
 
 var PORT uint = 9000
 var TIMEOUT time.Duration = time.Duration(20 * time.Millisecond)
@@ -51,6 +54,31 @@ func getInMemoryKVStoreClient() gobuddyfs.KVStore {
 	return gobuddyfs.NewMemStore()
 }
 
+func getGKVStoreClient() (gobuddyfs.KVStore, func()) {
+	const buddyfs string = "BuddyFS"
+	f, err := os.OpenFile("/tmp/test.gkvlite", os.O_RDWR|os.O_CREATE, 0660)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	s, err := gkvlite.NewStore(f)
+	if err != nil {
+		glog.Fatal(err)
+	}
+
+	c := s.GetCollection(buddyfs)
+	if c == nil {
+		c = s.SetCollection(buddyfs, bytes.Compare)
+	}
+
+	return gobuddyfs.NewGKVStore(c, s), func() {
+		c.Write()
+		s.Close()
+		s.Flush()
+		f.Sync()
+	}
+}
+
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 	flag.Usage = Usage
@@ -76,11 +104,22 @@ func main() {
 	defer pprof.StopCPUProfile()
 
 	var kvStore gobuddyfs.KVStore
+	var cleanup func()
 
-	if *useMemStore {
+	switch *storeType {
+	case "mem":
 		kvStore = getInMemoryKVStoreClient()
-	} else {
+	case "gkv":
+		kvStore, cleanup = getGKVStoreClient()
+	case "p2p":
 		kvStore = getBuddyStoreClient()
+	default:
+		log.Fatal("Unknown store type", storeType)
+		os.Exit(2)
+	}
+
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	err = fs.Serve(c, gobuddyfs.NewBuddyFS(kvStore))

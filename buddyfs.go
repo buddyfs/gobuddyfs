@@ -13,6 +13,7 @@ import (
 )
 
 const BLOCK_SIZE = 4096
+const ROOT_BLOCK_KEY = "ROOT"
 
 func min(a int, b int) int {
 	if a < b {
@@ -57,9 +58,10 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 	defer bfs.Lock.Unlock()
 
 	if bfs.FSM == nil {
-		rootKey, err := bfs.Store.Get("ROOT", true)
+		rootKey, err := bfs.Store.Get(ROOT_BLOCK_KEY, true)
 
 		if rootKey == nil {
+			glog.Infoln("Creating new root block")
 			// Root key not found
 			root := bfs.CreateNewFSMetadata()
 			root.MarkDirty()
@@ -67,7 +69,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 			if err == nil {
 				buffer := make([]byte, 80)
 				binary.PutVarint(buffer, root.Block.Id)
-				err = bfs.Store.Set("ROOT", buffer)
+				err = bfs.Store.Set(ROOT_BLOCK_KEY, buffer)
 				if err == nil {
 					bfs.FSM = root
 					bfs.FSM.KVS = bfs.Store
