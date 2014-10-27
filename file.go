@@ -26,6 +26,8 @@ type File struct {
 	BFS        *BuddyFS             `json:"-"`
 }
 
+var _ Marshalable = new(File)
+
 func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
 	if glog.V(2) {
 		glog.Infoln("Open called")

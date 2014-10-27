@@ -25,6 +25,8 @@ type Dir struct {
 	fs.Node
 }
 
+var _ Marshalable = new(Dir)
+
 func (dir *Dir) Marshal() ([]byte, error) {
 	return json.Marshal(dir)
 }
