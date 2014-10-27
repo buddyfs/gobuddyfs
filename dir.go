@@ -2,7 +2,6 @@ package gobuddyfs
 
 import (
 	"encoding/json"
-	"math/rand"
 	"os"
 	"sync"
 	"syscall"
@@ -15,12 +14,13 @@ import (
 
 // Dir implements both Node and Handle for the root directory.
 type Dir struct {
-	Dirs  []Block
-	Files []Block
-	Lock  sync.RWMutex `json:"-"`
-	store KVStore      `json:"-"`
-	BFS   *BuddyFS     `json:"-"`
-	KVS   KVStore      `json:"-"`
+	Dirs   []Block
+	Files  []Block
+	Lock   sync.RWMutex   `json:"-"`
+	store  KVStore        `json:"-"`
+	BFS    *BuddyFS       `json:"-"`
+	KVS    KVStore        `json:"-"`
+	blkGen BlockGenerator `json:"-"`
 	Block
 	fs.Node
 }
@@ -104,9 +104,10 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error
 		return nil, fuse.Errno(syscall.EEXIST)
 	}
 
-	blk := Block{Name: req.Name, Id: rand.Int63()}
+	blk := dir.blkGen.NewNamedBlock(req.Name)
 
-	newDir := &Dir{Block: blk, KVS: dir.KVS, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}
+	newDir := &Dir{Block: blk, KVS: dir.KVS, blkGen: dir.blkGen, Dirs: []Block{},
+		Files: []Block{}, Lock: sync.RWMutex{}}
 	newDir.MarkDirty()
 	err = newDir.WriteBlock(newDir, dir.KVS)
 	if err != nil {
@@ -189,9 +190,9 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 		return nil, nil, fuse.Errno(syscall.EEXIST)
 	}
 
-	blk := Block{Name: req.Name, Id: rand.Int63()}
+	blk := dir.blkGen.NewNamedBlock(req.Name)
 
-	newFile := &File{Block: blk, Blocks: []Block{}, KVS: dir.KVS}
+	newFile := &File{Block: blk, Blocks: []Block{}, KVS: dir.KVS, blkGen: dir.blkGen}
 	newFile.MarkDirty()
 	err = newFile.WriteBlock(newFile, dir.KVS)
 	if err != nil {

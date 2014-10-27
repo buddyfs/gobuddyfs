@@ -41,3 +41,5 @@ func (self *GKVStore) Set(key string, value []byte) error {
 	self.store.Flush()
 	return err
 }
+
+var _ KVStore = new(GKVStore)

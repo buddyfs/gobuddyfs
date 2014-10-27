@@ -24,9 +24,10 @@ func min(a int, b int) int {
 
 // BuddyFS implements the Buddy file system.
 type BuddyFS struct {
-	Lock  sync.Mutex
-	Store KVStore
-	FSM   *FSMeta
+	Lock   sync.Mutex
+	Store  KVStore
+	blkGen BlockGenerator
+	FSM    *FSMeta
 
 	fs.FS
 }
@@ -44,13 +45,14 @@ func (fsm *FSMeta) Unmarshal(data []byte) error {
 }
 
 func NewBuddyFS(store KVStore) *BuddyFS {
-	bfs := &BuddyFS{Store: store, Lock: sync.Mutex{}}
+	bfs := &BuddyFS{Store: store, Lock: sync.Mutex{},
+		blkGen: new(RandomizedBlockGenerator)}
 	return bfs
 }
 
 func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
-	return &FSMeta{Dir: Dir{Block: Block{Name: "/", Id: rand.Int63()},
-		Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
+	return &FSMeta{Dir: Dir{Block: bfs.blkGen.NewNamedBlock("/"),
+		blkGen: bfs.blkGen, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
 }
 
 func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
@@ -176,4 +178,23 @@ func (b *Block) ReadBlock(m Marshalable, store KVStore) error {
 	b.dirty = false
 
 	return nil
+}
+
+type BlockGenerator interface {
+	NewBlock() Block
+	NewNamedBlock(name string) Block
+}
+
+type RandomizedBlockGenerator struct {
+	// Implements: BlockGenerator
+}
+
+var _ BlockGenerator = new(RandomizedBlockGenerator)
+
+func (r RandomizedBlockGenerator) NewBlock() Block {
+	return Block{Id: rand.Int63()}
+}
+
+func (r RandomizedBlockGenerator) NewNamedBlock(name string) Block {
+	return Block{Id: rand.Int63(), Name: name}
 }

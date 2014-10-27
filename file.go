@@ -2,7 +2,6 @@ package gobuddyfs
 
 import (
 	"encoding/json"
-	"math/rand"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -22,6 +21,7 @@ type File struct {
 	Blocks     []Block
 	Size       uint64
 	KVS        KVStore              `json:"-"`
+	blkGen     BlockGenerator       `json:"-"`
 	BlockCache map[int64]*DataBlock `json:"-"`
 	BFS        *BuddyFS             `json:"-"`
 }
@@ -105,7 +105,7 @@ func (file *File) setSize(size uint64) fuse.Error {
 			glog.Infoln("Increasing number of blocks to", newBlockCount)
 		}
 		for uint64(len(file.Blocks)) < newBlockCount {
-			blk := Block{Id: rand.Int63()}
+			blk := file.blkGen.NewBlock()
 			dBlk := DataBlock{Block: blk, Data: []byte{}}
 			dBlk.MarkDirty()
 
