@@ -66,6 +66,7 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, f
 			}
 
 			dirDir.KVS = dir.KVS
+			dirDir.blkGen = dir.blkGen
 			return true, dirId, &dirDir, nil
 		}
 	}
@@ -82,6 +83,7 @@ func (dir *Dir) LookupUnlocked(name string, intr fs.Intr) (bool, int, fs.Node, f
 			}
 
 			file.KVS = dir.KVS
+			file.blkGen = dir.blkGen
 			return false, fileId, &file, nil
 		}
 	}
@@ -194,7 +196,7 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr 
 
 	blk := dir.blkGen.NewNamedBlock(req.Name)
 
-	newFile := &File{Block: blk, Blocks: []Block{}, KVS: dir.KVS, blkGen: dir.blkGen}
+	newFile := &File{Block: blk, Blocks: []StorageUnit{}, KVS: dir.KVS, blkGen: dir.blkGen}
 	newFile.MarkDirty()
 	err = newFile.WriteBlock(newFile, dir.KVS)
 	if err != nil {

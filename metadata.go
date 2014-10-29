@@ -10,18 +10,50 @@ type Marshalable interface {
 	Unmarshal([]byte) error
 }
 
+type Addressable interface {
+	GetId() int64
+	SetId(int64)
+}
+
+type Cacheable interface {
+	MarkDirty()
+	IsDirty() bool
+}
+
+type Storable interface {
+	WriteBlock(m Marshalable, store KVStore) error
+	ReadBlock(m Marshalable, store KVStore) error
+	Delete(store KVStore)
+}
+
+type StorageUnit interface {
+	Addressable
+	Cacheable
+	Storable
+}
+
 type Block struct {
 	Name  string
 	Id    int64
 	dirty bool `json:"-"`
 }
 
+var _ StorageUnit = new(Block)
+
 func (b *Block) Delete(store KVStore) {
 	store.Set(strconv.FormatInt(b.Id, 10), nil)
 }
 
+func (b *Block) SetId(id int64) {
+	b.Id = id
+}
+
 func (b *Block) MarkDirty() {
 	b.dirty = true
+}
+
+func (b Block) GetId() int64 {
+	return b.Id
 }
 
 func (b Block) IsDirty() bool {
@@ -64,7 +96,7 @@ func (b *Block) ReadBlock(m Marshalable, store KVStore) error {
 }
 
 type DataBlock struct {
-	Block
+	StorageUnit
 	Data []byte
 }
 
@@ -80,7 +112,7 @@ func (dBlock *DataBlock) Unmarshal(data []byte) error {
 }
 
 type BlockGenerator interface {
-	NewBlock() Block
+	NewBlock() StorageUnit
 	NewNamedBlock(name string) Block
 }
 
@@ -90,8 +122,8 @@ type RandomizedBlockGenerator struct {
 
 var _ BlockGenerator = new(RandomizedBlockGenerator)
 
-func (r RandomizedBlockGenerator) NewBlock() Block {
-	return Block{Id: rand.Int63()}
+func (r RandomizedBlockGenerator) NewBlock() StorageUnit {
+	return &Block{Id: rand.Int63()}
 }
 
 func (r RandomizedBlockGenerator) NewNamedBlock(name string) Block {

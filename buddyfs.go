@@ -100,6 +100,7 @@ func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
 
 		bfs.FSM = &root
 		bfs.FSM.KVS = bfs.Store
+		bfs.FSM.blkGen = new(RandomizedBlockGenerator)
 		return bfs.FSM, nil
 	}
 

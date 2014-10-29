@@ -1,7 +1,9 @@
 package gobuddyfs
 
 import (
-	"encoding/json"
+	"encoding/binary"
+
+	"bytes"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -18,8 +20,9 @@ import (
 // block entries, totalling ~1.62MB. With 32K blocks, we can get 102MB. So, this
 type File struct {
 	Block
-	Blocks     []Block
+	Blocks     []StorageUnit
 	Size       uint64
+	BlockSize  uint64
 	KVS        KVStore              `json:"-"`
 	blkGen     BlockGenerator       `json:"-"`
 	BlockCache map[int64]*DataBlock `json:"-"`
@@ -48,18 +51,18 @@ func (file *File) getBlock(index int64) *DataBlock {
 		file.BlockCache = make(map[int64]*DataBlock)
 	}
 
-	blkId := file.Blocks[index].Id
+	blkId := file.Blocks[index].GetId()
 
 	if file.BlockCache[blkId] == nil {
-		var startBlock DataBlock
-		startBlock.Block.Id = blkId
-		err := startBlock.ReadBlock(&startBlock, file.KVS)
+		startBlock := &DataBlock{StorageUnit: &Block{}}
+		startBlock.SetId(blkId)
+		err := startBlock.ReadBlock(startBlock, file.KVS)
 		if err != nil {
 			glog.Errorf("Error while reading data block: %q", err)
 			return nil
 		}
 
-		file.BlockCache[blkId] = &startBlock
+		file.BlockCache[blkId] = startBlock
 	}
 
 	return file.BlockCache[blkId]
@@ -74,7 +77,7 @@ func (file *File) appendBlock(dblk *DataBlock) {
 		file.BlockCache = make(map[int64]*DataBlock)
 	}
 
-	file.BlockCache[dblk.Id] = dblk
+	file.BlockCache[dblk.GetId()] = dblk
 	file.MarkDirty()
 }
 
@@ -95,12 +98,8 @@ func (file *File) setSize(size uint64) fuse.Error {
 		file.Blocks = file.Blocks[:newBlockCount]
 
 		for blk := range blocksToDelete {
-			// TODO: Actually call delete on the backing store
-			if glog.V(2) {
-				glog.Warningln("Removing ", blocksToDelete[blk].Id)
-				delete(file.BlockCache, blocksToDelete[blk].Id)
-				blocksToDelete[blk].Delete(file.KVS)
-			}
+			delete(file.BlockCache, blocksToDelete[blk].GetId())
+			blocksToDelete[blk].Delete(file.KVS)
 		}
 	} else if newBlockCount > uint64(len(file.Blocks)) {
 		if glog.V(2) {
@@ -108,7 +107,7 @@ func (file *File) setSize(size uint64) fuse.Error {
 		}
 		for uint64(len(file.Blocks)) < newBlockCount {
 			blk := file.blkGen.NewBlock()
-			dBlk := DataBlock{Block: blk, Data: []byte{}}
+			dBlk := DataBlock{StorageUnit: blk, Data: []byte{}}
 			dBlk.MarkDirty()
 
 			file.Blocks = append(file.Blocks, blk)
@@ -197,11 +196,58 @@ func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs
 }
 
 func (file *File) Marshal() ([]byte, error) {
-	return json.Marshal(file)
+	var buf = new(bytes.Buffer)
+
+	binary.Write(buf, binary.LittleEndian, &file.Size)
+	binary.Write(buf, binary.LittleEndian, file.BlockSize)
+
+	// TODO: This might be redundant given blocksize and file size.
+	binary.Write(buf, binary.LittleEndian, int64(len(file.Blocks)))
+
+	for _, blk := range file.Blocks {
+		// TODO: This is the right place to do a spill check, to put data into the
+		// next block.
+		binary.Write(buf, binary.LittleEndian, blk.GetId())
+	}
+
+	return buf.Bytes(), nil
 }
 
 func (file *File) Unmarshal(data []byte) error {
-	return json.Unmarshal(data, file)
+	var err error
+	var sz int64
+	rd := bytes.NewReader(data)
+
+	err = binary.Read(rd, binary.LittleEndian, &file.Size)
+	if err != nil {
+		return err
+	}
+
+	err = binary.Read(rd, binary.LittleEndian, &file.BlockSize)
+	if err != nil {
+		return err
+	}
+
+	err = binary.Read(rd, binary.LittleEndian, &sz)
+	if err != nil {
+		return err
+	}
+
+	file.Blocks = make([]StorageUnit, sz)
+
+	for i := 0; i < int(sz); i++ {
+		var blkId int64
+		err = binary.Read(rd, binary.LittleEndian, &blkId)
+		if err != nil {
+			return err
+		}
+
+		file.Blocks[i] = &Block{Id: blkId}
+	}
+
+	file.BlockCache = make(map[int64]*DataBlock)
+
+	return nil
 }
 
 func (file File) Attr() fuse.Attr {
@@ -234,7 +280,8 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 		if file.BlockCache[i] != nil && file.BlockCache[i].IsDirty() {
 			err := file.BlockCache[i].WriteBlock(file.BlockCache[i], file.KVS)
 			if err != nil {
-				glog.Warning("Unable to write block %s due to error: %s", file.Blocks[i].Id, err)
+				glog.Warning("Unable to write block %s due to error: %s",
+					file.Blocks[i].GetId(), err)
 			} else {
 				file.BlockCache[i] = nil
 			}
