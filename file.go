@@ -8,6 +8,7 @@ import (
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	"github.com/golang/glog"
+	"golang.org/x/net/context"
 )
 
 // TODO: Determine a mechanism to spill over metadata chunks into more block(s).
@@ -31,7 +32,7 @@ type File struct {
 
 var _ Marshalable = new(File)
 
-func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
+func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, ctx context.Context) (fs.Handle, error) {
 	if glog.V(2) {
 		glog.Infoln("Open called")
 	}
@@ -89,7 +90,7 @@ func blkCount(size uint64, BLK_SIZE uint64) uint64 {
 
 // TODO: Should the return type be a standard error instead?
 // TODO: Unit tests!
-func (file *File) setSize(size uint64) fuse.Error {
+func (file *File) setSize(size uint64) error {
 	newBlockCount := blkCount(size, BLOCK_SIZE)
 
 	if newBlockCount < uint64(len(file.Blocks)) {
@@ -127,7 +128,7 @@ func (file *File) setSize(size uint64) fuse.Error {
 	return nil
 }
 
-func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
+func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, ctx context.Context) error {
 	if glog.V(2) {
 		glog.Infoln("Setattr called")
 		glog.Infoln("Req: ", req)
@@ -149,13 +150,13 @@ func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, i
 
 	if metaChanges {
 		// There are metadata changes to the file, write back before proceeding.
-		return file.Flush(nil, intr)
+		return file.Flush(nil, ctx)
 	}
 
 	return nil
 }
 
-func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, intr fs.Intr) fuse.Error {
+func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, ctx context.Context) error {
 	dataBytes := len(req.Data)
 	if glog.V(2) {
 		glog.Infof("Writing %d byte(s) at offset %d", dataBytes, req.Offset)
@@ -261,7 +262,7 @@ func (file File) Attr() fuse.Attr {
 		Blocks: uint64(len(file.Blocks)), Size: file.Size}
 }
 
-func (file *File) Release(req *fuse.ReleaseRequest, intr fs.Intr) fuse.Error {
+func (file *File) Release(req *fuse.ReleaseRequest, ctx context.Context) error {
 	if glog.V(2) {
 		glog.Infoln("Release", file.Name)
 	}
@@ -274,7 +275,7 @@ func (file *File) Forget() {
 	}
 }
 
-func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
+func (file *File) Flush(req *fuse.FlushRequest, ctx context.Context) error {
 	if glog.V(2) {
 		glog.Infoln("FLUSH", file.Name, file.IsDirty())
 	}
@@ -301,14 +302,14 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 	return nil
 }
 
-func (file *File) Fsync(req *fuse.FsyncRequest, intr fs.Intr) fuse.Error {
+func (file *File) Fsync(req *fuse.FsyncRequest, ctx context.Context) error {
 	if glog.V(2) {
 		glog.Infoln("FSYNC", file.Name, file.IsDirty())
 	}
-	return file.Flush(nil, intr)
+	return file.Flush(nil, ctx)
 }
 
-func (file *File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, intr fs.Intr) fuse.Error {
+func (file *File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, ctx context.Context) error {
 	if glog.V(2) {
 		glog.Infof("Reading %d byte(s) at offset %d", req.Size, req.Offset)
 	}

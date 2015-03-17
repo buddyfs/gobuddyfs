@@ -53,7 +53,7 @@ func (bfs BuddyFS) CreateNewFSMetadata() *FSMeta {
 		blkGen: bfs.blkGen, Dirs: []Block{}, Files: []Block{}, Lock: sync.RWMutex{}}}
 }
 
-func (bfs *BuddyFS) Root() (fs.Node, fuse.Error) {
+func (bfs *BuddyFS) Root() (fs.Node, error) {
 	bfs.Lock.Lock()
 	defer bfs.Lock.Unlock()
 

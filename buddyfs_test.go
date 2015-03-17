@@ -12,6 +12,7 @@ import (
 	"github.com/buddyfs/gobuddyfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"golang.org/x/net/context"
 )
 
 type MockKVStore struct {
@@ -197,12 +198,12 @@ func TestMkdirWithDuplicate(t *testing.T) {
 
 	root, _ := bfs.Root()
 
-	node, err := root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, make(fs.Intr))
+	node, err := root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, context.TODO())
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Newly created directory node should not be nil")
 
 	// Create duplicate directory
-	node, err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, make(fs.Intr))
+	node, err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, context.TODO())
 	assert.Error(t, err, "Duplicate directory name")
 	assert.Nil(t, node)
 }
@@ -215,15 +216,15 @@ func TestParallelMkdirWithDuplicate(t *testing.T) {
 
 	const parallelism = 10
 	nodes := make([]fs.Node, parallelism)
-	errs := make([]fuse.Error, parallelism)
+	errs := make([]error, parallelism)
 	dones := make([]chan bool, parallelism)
 
 	for i := 0; i < parallelism; i++ {
 		dones[i] = make(chan bool)
 	}
 
-	mkdir := func(node *fs.Node, err *fuse.Error, done chan bool) {
-		*node, *err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, make(fs.Intr))
+	mkdir := func(node *fs.Node, err *error, done chan bool) {
+		*node, *err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, context.TODO())
 		done <- true
 	}
 
@@ -265,12 +266,12 @@ func TestCreateWithDuplicate(t *testing.T) {
 
 	root, _ := bfs.Root()
 
-	node, _, err := root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, make(fs.Intr))
+	node, _, err := root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, context.TODO())
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Newly created file node should not be nil")
 
 	// Create duplicate file
-	node, _, err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, make(fs.Intr))
+	node, _, err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, context.TODO())
 	assert.Error(t, err, "Duplicate file name")
 	assert.Nil(t, node)
 }
@@ -283,15 +284,15 @@ func TestParallelCreateWithDuplicate(t *testing.T) {
 
 	const parallelism = 10
 	nodes := make([]fs.Node, parallelism)
-	errs := make([]fuse.Error, parallelism)
+	errs := make([]error, parallelism)
 	dones := make([]chan bool, parallelism)
 
 	for i := 0; i < parallelism; i++ {
 		dones[i] = make(chan bool)
 	}
 
-	mkdir := func(node *fs.Node, err *fuse.Error, done chan bool) {
-		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, make(fs.Intr))
+	mkdir := func(node *fs.Node, err *error, done chan bool) {
+		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, context.TODO())
 		done <- true
 	}
 
@@ -335,15 +336,15 @@ func TestParallelCreate(t *testing.T) {
 
 	const parallelism = 100
 	nodes := make([]fs.Node, parallelism)
-	errs := make([]fuse.Error, parallelism)
+	errs := make([]error, parallelism)
 	dones := make([]chan bool, parallelism)
 
 	for i := 0; i < parallelism; i++ {
 		dones[i] = make(chan bool)
 	}
 
-	mkdir := func(node *fs.Node, err *fuse.Error, done chan bool, name string) {
-		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: name}, nil, make(fs.Intr))
+	mkdir := func(node *fs.Node, err *error, done chan bool, name string) {
+		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: name}, nil, context.TODO())
 		done <- true
 	}
 
