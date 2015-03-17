@@ -3,6 +3,7 @@ package gobuddyfs
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
 	"bazil.org/fuse"
@@ -62,6 +63,22 @@ func (b *MockBlock) WriteBlock(m Marshalable, store KVStore) error {
 	return args.Error(0)
 }
 
+type MockStore struct {
+	mock.Mock
+}
+
+var _ KVStore = new(MockStore)
+
+func (m *MockStore) Get(key string, retry bool) ([]byte, error) {
+	args := m.Mock.Called(key, retry)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockStore) Set(key string, value []byte) error {
+	args := m.Mock.Called(key, value)
+	return args.Error(0)
+}
+
 func BenchmarkFileWriteToCache(b *testing.B) {
 	var bSize int64 = 4096
 	var i int64
@@ -118,4 +135,68 @@ func TestFileSetSize(t *testing.T) {
 	mBlocks[2].On("Delete", nil).Return().Once()
 	file.setSize(4096)
 	mBlkGen.AssertExpectations(t)
+	mBlocks[1].AssertExpectations(t)
+	mBlocks[2].AssertExpectations(t)
+}
+
+func TestFileWrite(t *testing.T) {
+	var mBlkGen = new(MockBlockGenerator)
+	var mStore = new(MockStore)
+	var file = &File{Block: Block{}, Blocks: []StorageUnit{}, blkGen: mBlkGen,
+		KVS: mStore}
+	var mBlocks []*MockBlock = make([]*MockBlock, 3)
+
+	mBlocks[0] = &MockBlock{}
+	mBlocks[0].On("GetId").Return(int64(1))
+
+	var bSize int64 = 4096
+	var i int64
+
+	var data []byte = make([]byte, bSize)
+	for i = 0; i < bSize; i++ {
+		data[i] = byte(i)
+	}
+
+	// Write first 1000 bytes
+	req := &fuse.WriteRequest{Data: data[:1000], Offset: 0}
+	res := &fuse.WriteResponse{}
+
+	mBlkGen.On("NewBlock").Return(mBlocks[0]).Once()
+	// Once for NewBlock and once more after writing data.
+	mBlocks[0].On("MarkDirty").Return().Twice()
+	file.Write(req, res, nil)
+	mBlkGen.AssertExpectations(t)
+	mBlocks[0].AssertExpectations(t)
+	assert.EqualValues(t, 1000, file.Size)
+
+	mBlocks[0].On("IsDirty").Return(true).Once()
+	// TODO: Block output
+	mBlocks[0].On("WriteBlock", mock.AnythingOfType("*gobuddyfs.DataBlock"),
+		mStore).Return(nil).Once()
+	// TODO: File layout output
+	mStore.On("Set", "0", mock.Anything).Return(nil).Once()
+	file.Flush(nil, nil)
+	mBlkGen.AssertExpectations(t)
+	mBlocks[0].AssertExpectations(t)
+
+	// Write first 4096 bytes, overwriting previous content
+	req = &fuse.WriteRequest{Data: data, Offset: 0}
+	res = &fuse.WriteResponse{}
+
+	mBlocks[0].On("MarkDirty").Return().Once()
+	mStore.On("Get", "1", mock.Anything).Return(data[:1000], nil).Once()
+	file.Write(req, res, nil)
+	mBlkGen.AssertExpectations(t)
+	mBlocks[0].AssertExpectations(t)
+	assert.EqualValues(t, 4096, file.Size)
+
+	// Overwrite bytes 200-299.
+	req = &fuse.WriteRequest{Data: data[:100], Offset: 200}
+	res = &fuse.WriteResponse{}
+
+	mBlocks[0].On("MarkDirty").Return().Once()
+	file.Write(req, res, nil)
+	mBlkGen.AssertExpectations(t)
+	mBlocks[0].AssertExpectations(t)
+	assert.EqualValues(t, 4096, file.Size)
 }

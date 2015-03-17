@@ -40,7 +40,7 @@ func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, intr fs.In
 
 func (file *File) getBlock(index int64) *DataBlock {
 	if glog.V(2) {
-		glog.Infoln("GetBlock: ", index)
+		glog.Infoln("GetBlock:", index)
 	}
 
 	if uint64(index) >= blkCount(file.Size, BLOCK_SIZE) {
@@ -54,6 +54,8 @@ func (file *File) getBlock(index int64) *DataBlock {
 	blkId := file.Blocks[index].GetId()
 
 	if file.BlockCache[blkId] == nil {
+		// TODO: This mechanism of fetching blocks from disk to cache makes testing
+		// harder. Find an alternate mechanism to do so.
 		startBlock := &DataBlock{StorageUnit: &Block{}}
 		startBlock.SetId(blkId)
 		err := startBlock.ReadBlock(startBlock, file.KVS)
@@ -283,7 +285,12 @@ func (file *File) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
 				glog.Warning("Unable to write block %s due to error: %s",
 					file.Blocks[i].GetId(), err)
 			} else {
-				file.BlockCache[i] = nil
+				// TODO: Use an LRU cache to keep blocks in memory. Dropping dirty items
+				// as soon as they are written is wasteful. On the other hand, not
+				// dropping these items will fill up memory and cause OOMs for
+				// relatively small sized files.
+
+				// file.BlockCache[i] = nil
 			}
 		}
 	}
