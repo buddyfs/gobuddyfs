@@ -32,7 +32,7 @@ type File struct {
 
 var _ Marshalable = new(File)
 
-func (file *File) Open(req *fuse.OpenRequest, res *fuse.OpenResponse, ctx context.Context) (fs.Handle, error) {
+func (file *File) Open(ctx context.Context, req *fuse.OpenRequest, res *fuse.OpenResponse) (fs.Handle, error) {
 	if glog.V(2) {
 		glog.Infoln("Open called")
 	}
@@ -128,7 +128,7 @@ func (file *File) setSize(size uint64) error {
 	return nil
 }
 
-func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, ctx context.Context) error {
+func (file *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, res *fuse.SetattrResponse) error {
 	if glog.V(2) {
 		glog.Infoln("Setattr called")
 		glog.Infoln("Req: ", req)
@@ -150,13 +150,13 @@ func (file *File) Setattr(req *fuse.SetattrRequest, res *fuse.SetattrResponse, c
 
 	if metaChanges {
 		// There are metadata changes to the file, write back before proceeding.
-		return file.Flush(nil, ctx)
+		return file.Flush(ctx, nil)
 	}
 
 	return nil
 }
 
-func (file *File) Write(req *fuse.WriteRequest, res *fuse.WriteResponse, ctx context.Context) error {
+func (file *File) Write(ctx context.Context, req *fuse.WriteRequest, res *fuse.WriteResponse) error {
 	dataBytes := len(req.Data)
 	if glog.V(2) {
 		glog.Infof("Writing %d byte(s) at offset %d", dataBytes, req.Offset)
@@ -262,7 +262,7 @@ func (file File) Attr() fuse.Attr {
 		Blocks: uint64(len(file.Blocks)), Size: file.Size}
 }
 
-func (file *File) Release(req *fuse.ReleaseRequest, ctx context.Context) error {
+func (file *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	if glog.V(2) {
 		glog.Infoln("Release", file.Name)
 	}
@@ -275,7 +275,7 @@ func (file *File) Forget() {
 	}
 }
 
-func (file *File) Flush(req *fuse.FlushRequest, ctx context.Context) error {
+func (file *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	if glog.V(2) {
 		glog.Infoln("FLUSH", file.Name, file.IsDirty())
 	}
@@ -302,14 +302,14 @@ func (file *File) Flush(req *fuse.FlushRequest, ctx context.Context) error {
 	return nil
 }
 
-func (file *File) Fsync(req *fuse.FsyncRequest, ctx context.Context) error {
+func (file *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	if glog.V(2) {
 		glog.Infoln("FSYNC", file.Name, file.IsDirty())
 	}
-	return file.Flush(nil, ctx)
+	return file.Flush(ctx, nil)
 }
 
-func (file *File) Read(req *fuse.ReadRequest, res *fuse.ReadResponse, ctx context.Context) error {
+func (file *File) Read(ctx context.Context, req *fuse.ReadRequest, res *fuse.ReadResponse) error {
 	if glog.V(2) {
 		glog.Infof("Reading %d byte(s) at offset %d", req.Size, req.Offset)
 	}

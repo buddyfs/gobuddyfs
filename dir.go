@@ -46,15 +46,19 @@ func (dir Dir) Attr() fuse.Attr {
 	return fuse.Attr{Mode: os.ModeDir | 0555, Inode: uint64(dir.Id)}
 }
 
-func (dir *Dir) Lookup(name string, ctx context.Context) (fs.Node, error) {
+func (dir *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
+	if glog.V(2) {
+		glog.Infof("Looking up file %s", name)
+	}
+
 	dir.Lock.RLock()
 	defer dir.Lock.RUnlock()
 
-	_, _, node, err := dir.LookupUnlocked(name, ctx)
+	_, _, node, err := dir.LookupUnlocked(ctx, name)
 	return node, err
 }
 
-func (dir *Dir) LookupUnlocked(name string, ctx context.Context) (bool, int, fs.Node, error) {
+func (dir *Dir) LookupUnlocked(ctx context.Context, name string) (bool, int, fs.Node, error) {
 	for dirId := range dir.Dirs {
 		if dir.Dirs[dirId].Name == name {
 			var dirDir Dir
@@ -92,7 +96,7 @@ func (dir *Dir) LookupUnlocked(name string, ctx context.Context) (bool, int, fs.
 	return false, 0, nil, fuse.ENOENT
 }
 
-func (dir *Dir) Mkdir(req *fuse.MkdirRequest, ctx context.Context) (fs.Node, error) {
+func (dir *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
 	if glog.V(2) {
 		glog.Infof("Mkdir %s %d", req.Name, len(req.Name))
 	}
@@ -104,7 +108,7 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, ctx context.Context) (fs.Node, err
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
-	_, _, _, err := dir.LookupUnlocked(req.Name, ctx)
+	_, _, _, err := dir.LookupUnlocked(ctx, req.Name)
 	if err != fuse.ENOENT {
 		return nil, fuse.Errno(syscall.EEXIST)
 	}
@@ -129,7 +133,7 @@ func (dir *Dir) Mkdir(req *fuse.MkdirRequest, ctx context.Context) (fs.Node, err
 	return newDir, nil
 }
 
-func (dir *Dir) Remove(req *fuse.RemoveRequest, ctx context.Context) error {
+func (dir *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	if glog.V(2) {
 		glog.Infof("Removing %s %d", req.Name, len(req.Name))
 	}
@@ -140,7 +144,7 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, ctx context.Context) error {
 
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
-	isDir, posn, node, err := dir.LookupUnlocked(req.Name, ctx)
+	isDir, posn, node, err := dir.LookupUnlocked(ctx, req.Name)
 
 	if err != nil {
 		return err
@@ -178,7 +182,7 @@ func (dir *Dir) Remove(req *fuse.RemoveRequest, ctx context.Context) error {
 	return fuse.ENOSYS
 }
 
-func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, ctx context.Context) (fs.Node, fs.Handle, error) {
+func (dir *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	if glog.V(2) {
 		glog.Infof("Creating file %s %d", req.Name, len(req.Name))
 	}
@@ -190,7 +194,7 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, ctx c
 	dir.Lock.Lock()
 	defer dir.Lock.Unlock()
 
-	_, _, _, err := dir.LookupUnlocked(req.Name, ctx)
+	_, _, _, err := dir.LookupUnlocked(ctx, req.Name)
 	if err != fuse.ENOENT {
 		return nil, nil, fuse.Errno(syscall.EEXIST)
 	}
@@ -214,7 +218,7 @@ func (dir *Dir) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, ctx c
 	return newFile, newFile, nil
 }
 
-func (dir *Dir) ReadDir(ctx context.Context) ([]fuse.Dirent, error) {
+func (dir *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	dirEnts := []fuse.Dirent{}
 
 	for dirId := range dir.Dirs {

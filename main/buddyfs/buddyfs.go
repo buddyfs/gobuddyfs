@@ -90,7 +90,8 @@ func main() {
 	}
 	mountpoint := flag.Arg(0)
 
-	c, err := fuse.Mount(mountpoint)
+	c, err := fuse.Mount(mountpoint, fuse.FSName("gobuddyfs"),
+		fuse.Subtype("buddyfs"), fuse.LocalVolume())
 	if err != nil {
 		log.Fatal(err)
 	}

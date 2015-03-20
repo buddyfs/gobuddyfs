@@ -198,12 +198,12 @@ func TestMkdirWithDuplicate(t *testing.T) {
 
 	root, _ := bfs.Root()
 
-	node, err := root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, context.TODO())
+	node, err := root.(*gobuddyfs.FSMeta).Mkdir(context.TODO(), &fuse.MkdirRequest{Name: "foo"})
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Newly created directory node should not be nil")
 
 	// Create duplicate directory
-	node, err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, context.TODO())
+	node, err = root.(*gobuddyfs.FSMeta).Mkdir(context.TODO(), &fuse.MkdirRequest{Name: "foo"})
 	assert.Error(t, err, "Duplicate directory name")
 	assert.Nil(t, node)
 }
@@ -224,7 +224,7 @@ func TestParallelMkdirWithDuplicate(t *testing.T) {
 	}
 
 	mkdir := func(node *fs.Node, err *error, done chan bool) {
-		*node, *err = root.(*gobuddyfs.FSMeta).Mkdir(&fuse.MkdirRequest{Name: "foo"}, context.TODO())
+		*node, *err = root.(*gobuddyfs.FSMeta).Mkdir(context.TODO(), &fuse.MkdirRequest{Name: "foo"})
 		done <- true
 	}
 
@@ -266,12 +266,12 @@ func TestCreateWithDuplicate(t *testing.T) {
 
 	root, _ := bfs.Root()
 
-	node, _, err := root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, context.TODO())
+	node, _, err := root.(*gobuddyfs.FSMeta).Create(context.TODO(), &fuse.CreateRequest{Name: "foo"}, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Newly created file node should not be nil")
 
 	// Create duplicate file
-	node, _, err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, context.TODO())
+	node, _, err = root.(*gobuddyfs.FSMeta).Create(context.TODO(), &fuse.CreateRequest{Name: "foo"}, nil)
 	assert.Error(t, err, "Duplicate file name")
 	assert.Nil(t, node)
 }
@@ -292,7 +292,7 @@ func TestParallelCreateWithDuplicate(t *testing.T) {
 	}
 
 	mkdir := func(node *fs.Node, err *error, done chan bool) {
-		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: "foo"}, nil, context.TODO())
+		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(context.TODO(), &fuse.CreateRequest{Name: "foo"}, nil)
 		done <- true
 	}
 
@@ -344,7 +344,7 @@ func TestParallelCreate(t *testing.T) {
 	}
 
 	mkdir := func(node *fs.Node, err *error, done chan bool, name string) {
-		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(&fuse.CreateRequest{Name: name}, nil, context.TODO())
+		*node, _, *err = root.(*gobuddyfs.FSMeta).Create(context.TODO(), &fuse.CreateRequest{Name: name}, nil)
 		done <- true
 	}
 

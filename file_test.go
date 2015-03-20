@@ -97,7 +97,7 @@ func BenchmarkFileWriteToCache(b *testing.B) {
 
 	b.N = min(b.N, 500000)
 	for i := 0; i < b.N; i++ {
-		file.Write(req, res, nil)
+		file.Write(nil, req, res)
 		req.Offset += bSize
 	}
 }
@@ -164,7 +164,7 @@ func TestFileWrite(t *testing.T) {
 	mBlkGen.On("NewBlock").Return(mBlocks[0]).Once()
 	// Once for NewBlock and once more after writing data.
 	mBlocks[0].On("MarkDirty").Return().Twice()
-	file.Write(req, res, nil)
+	file.Write(nil, req, res)
 	mBlkGen.AssertExpectations(t)
 	mBlocks[0].AssertExpectations(t)
 	assert.EqualValues(t, 1000, file.Size)
@@ -185,7 +185,7 @@ func TestFileWrite(t *testing.T) {
 
 	mBlocks[0].On("MarkDirty").Return().Once()
 	mStore.On("Get", "1", mock.Anything).Return(data[:1000], nil).Once()
-	file.Write(req, res, nil)
+	file.Write(nil, req, res)
 	mBlkGen.AssertExpectations(t)
 	mBlocks[0].AssertExpectations(t)
 	assert.EqualValues(t, 4096, file.Size)
@@ -195,7 +195,7 @@ func TestFileWrite(t *testing.T) {
 	res = &fuse.WriteResponse{}
 
 	mBlocks[0].On("MarkDirty").Return().Once()
-	file.Write(req, res, nil)
+	file.Write(nil, req, res)
 	mBlkGen.AssertExpectations(t)
 	mBlocks[0].AssertExpectations(t)
 	assert.EqualValues(t, 4096, file.Size)
