@@ -27,3 +27,4 @@ _testmain.go
 
 # Profile files
 *.prof
+*.heap

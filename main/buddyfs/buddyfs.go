@@ -23,6 +23,8 @@ import (
 var storeType = flag.String("store", "p2p",
 	"Type of backing store for filesystem. Options: mem|gkv|p2p")
 
+var profile = flag.Bool("profile", true, "Enable profiling output")
+
 var PORT uint = 9000
 var TIMEOUT time.Duration = time.Duration(20 * time.Millisecond)
 
@@ -97,12 +99,21 @@ func main() {
 	}
 	defer c.Close()
 
-	f, err := os.Create("buddyfs.prof")
-	if err != nil {
-		log.Fatal(err)
+	if *profile {
+		f, err := os.Create("buddyfs.prof")
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+
+		heapproff, err := os.Create("buddyfs.heap")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		defer pprof.WriteHeapProfile(heapproff)
 	}
-	pprof.StartCPUProfile(f)
-	defer pprof.StopCPUProfile()
 
 	var kvStore gobuddyfs.KVStore
 	var cleanup func()
