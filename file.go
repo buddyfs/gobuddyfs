@@ -141,8 +141,10 @@ func (file *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, res *fu
 		metaChanges = true
 	}
 
-	if res.Attr != file.Attr() {
-		res.Attr = file.Attr()
+	currAttr := fuse.Attr{}
+	file.Attr(&currAttr)
+	if res.Attr != currAttr {
+		res.Attr = currAttr
 		metaChanges = true
 	}
 
@@ -253,13 +255,15 @@ func (file *File) Unmarshal(data []byte) error {
 	return nil
 }
 
-func (file File) Attr() fuse.Attr {
+func (file File) Attr(attr *fuse.Attr) {
 	if glog.V(2) {
 		glog.Infoln("Attr called", file.Name)
 	}
 
-	return fuse.Attr{Mode: 0444, Inode: uint64(file.Id),
-		Blocks: uint64(len(file.Blocks)), Size: file.Size}
+	attr.Mode = 0444
+	attr.Inode = uint64(file.Id)
+	attr.Blocks = uint64(len(file.Blocks))
+	attr.Size = file.Size
 }
 
 func (file *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {

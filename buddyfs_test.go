@@ -59,7 +59,9 @@ func TestRootCreateSuccess(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Successfully created root should be non-nil")
-	assert.NotNil(t, node.Attr())
+	attr := fuse.Attr{}
+	node.Attr(&attr)
+	assert.NotNil(t, attr)
 
 	mkv.AssertExpectations(t)
 }
@@ -73,7 +75,9 @@ func TestRootCreateAndReadRoot(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Successfully created root should be non-nil")
-	assert.NotNil(t, node.Attr())
+	attr := fuse.Attr{}
+	node.Attr(&attr)
+	assert.NotNil(t, attr)
 
 	mkv.AssertExpectations(t)
 
@@ -161,7 +165,9 @@ func TestRootReadExistingRoot(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Successfully created root should be non-nil")
-	assert.NotNil(t, node.Attr())
+	attr := fuse.Attr{}
+	node.Attr(&attr)
+	assert.NotNil(t, attr)
 
 	mkv.AssertExpectations(t)
 }
@@ -182,7 +188,9 @@ func TestRootReReadExistingRoot(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, node, "Successfully created root should be non-nil")
-	assert.NotNil(t, node.Attr())
+	attr := fuse.Attr{}
+	node.Attr(&attr)
+	assert.NotNil(t, attr)
 
 	node2, err2 := bfs.Root()
 	assert.NoError(t, err2)
