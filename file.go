@@ -295,6 +295,7 @@ func (file *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 				// dropping these items will fill up memory and cause OOMs for
 				// relatively small sized files.
 
+				file.BlockCache[i].MarkClean()
 				// file.BlockCache[i] = nil
 			}
 		}

@@ -49,6 +49,10 @@ func (b *MockBlock) MarkDirty() {
 	b.Mock.Called()
 }
 
+func (b *MockBlock) MarkClean() {
+	b.Mock.Called()
+}
+
 func (b *MockBlock) ReadBlock(m Marshalable, store KVStore) error {
 	args := b.Mock.Called(m, store)
 	return args.Error(0)
@@ -173,6 +177,7 @@ func TestFileWrite(t *testing.T) {
 	// TODO: Block output
 	mBlocks[0].On("WriteBlock", mock.AnythingOfType("*gobuddyfs.DataBlock"),
 		mStore).Return(nil).Once()
+	mBlocks[0].On("MarkClean").Return().Once()
 	// TODO: File layout output
 	mStore.On("Set", "0", mock.Anything).Return(nil).Once()
 	file.Flush(nil, nil)

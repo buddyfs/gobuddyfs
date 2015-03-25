@@ -17,6 +17,7 @@ type Addressable interface {
 
 type Cacheable interface {
 	MarkDirty()
+	MarkClean()
 	IsDirty() bool
 }
 
@@ -50,6 +51,10 @@ func (b *Block) SetId(id int64) {
 
 func (b *Block) MarkDirty() {
 	b.dirty = true
+}
+
+func (b *Block) MarkClean() {
+	b.dirty = false
 }
 
 func (b Block) GetId() int64 {
