@@ -42,9 +42,10 @@ func (dir *Dir) Forget() {
 	}
 }
 
-func (dir Dir) Attr(attr *fuse.Attr) {
+func (dir Dir) Attr(ctx context.Context, attr *fuse.Attr) error {
 	attr.Mode = os.ModeDir | 0555
 	attr.Inode = uint64(dir.Id)
+	return nil
 }
 
 func (dir *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
