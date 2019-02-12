@@ -1,8 +1,7 @@
 GoBuddyFS
 =========
 
-[![Build Status](https://drone.io/github.com/buddyfs/gobuddyfs/status.png)](https://drone.io/github.com/buddyfs/gobuddyfs/latest)
-[![Coverage Status](https://coveralls.io/repos/buddyfs/gobuddyfs/badge.png?branch=master)](https://coveralls.io/r/buddyfs/gobuddyfs?branch=master)
+[![GoDoc](https://godoc.org/github.com/buddyfs/gobuddyfs?status.svg)](https://godoc.org/github.com/buddyfs/gobuddyfs) [![Coverage Status](https://coveralls.io/repos/buddyfs/gobuddyfs/badge.png?branch=master)](https://coveralls.io/r/buddyfs/gobuddyfs?branch=master)
 
 Fuse-based filesystem written in Golang which can use any key-value store as a backend.
 
